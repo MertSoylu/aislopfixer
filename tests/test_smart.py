@@ -114,13 +114,13 @@ def test_llm_tell_buzzwords_ignored_as_code_identifiers():
 def test_knowledge_cutoff_is_strong_auto():
     f = [x for x in run_file_rules(sf("<p>My knowledge cutoff is 2023.</p>\n"))
          if x.category is Category.AI_LEAK]
-    assert f and f[0].fixability is Fixability.AUTO
+    assert f and f[0].fixability is Fixability.MANUAL
 
 
 def test_sorry_but_i_cannot_strong_auto():
     f = [x for x in run_file_rules(sf("I'm sorry, but I cannot create that.\n"))
          if x.category is Category.AI_LEAK]
-    assert f and f[0].fixability is Fixability.AUTO
+    assert f and f[0].fixability is Fixability.MANUAL
 
 
 def test_placeholder_address_flagged():

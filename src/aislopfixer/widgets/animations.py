@@ -60,13 +60,20 @@ class Spinner(Static):
         super().__init__(**kwargs)
         self._i = 0
         self._label = label
+        self._timer = None
 
     def set_label(self, label: str | Text) -> None:
         self._label = label
         self.refresh()
 
+    def stop(self) -> None:
+        """Freeze the spinner (e.g. on completion or error)."""
+        if self._timer is not None:
+            self._timer.stop()
+            self._timer = None
+
     def on_mount(self) -> None:
-        self.set_interval(0.08, self._tick)
+        self._timer = self.set_interval(0.08, self._tick)
 
     def _tick(self) -> None:
         self._i = (self._i + 1) % len(_BRAILLE)

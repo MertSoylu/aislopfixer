@@ -21,7 +21,7 @@ _MARKUP = frozenset({"html", "jsx"})
 # bindings ([checked], [disabled]), index access ([0], [i]), spread ([...slug]),
 # regex char-classes ([a-z], [^>]), destructuring ([a, b]), attribute
 # selectors ([type="text"]) and markdown refs/footnotes ([1], [^1]).
-_REJECT_CHARS = set('=<>|/\\{}$`"():;#&*+~%')
+_REJECT_CHARS = set("=<>|/\\{}$`\"():;#&*+~%'")
 _RANGE = re.compile(r"[a-z]-[a-z]|[A-Z]-[A-Z]|[0-9]-[0-9]")
 _IDENT = re.compile(r"[A-Za-z_$][\w$]*")  # JS identifier (camelCase incl.)
 _INSTRUCTION = {
@@ -103,7 +103,7 @@ class PlaceholderRule(PatternRule):
             id="placeholder.email",
             regex=re.compile(
                 r"\b[\w.+-]+@(?:example\.(?:com|org|net)|yourdomain\.com|"
-                r"domain\.com|test\.com|sample\.com|company\.com|email\.com)\b",
+                r"domain\.com|test\.com|sample\.com|company\.com)\b",
                 _I,
             ),
             severity=Severity.WARNING,
@@ -150,7 +150,7 @@ class PlaceholderRule(PatternRule):
         Pattern(
             id="placeholder.address",
             regex=re.compile(
-                r"\b1?23\s+(?:Main|Anywhere|Elm)\s+(?:St|Street|Ave|Avenue|Rd|Road)\b",
+                r"\b123\s+(?:Main|Anywhere|Elm)\s+(?:St|Street|Ave|Avenue|Rd|Road)\b",
                 _I,
             ),
             severity=Severity.INFO,

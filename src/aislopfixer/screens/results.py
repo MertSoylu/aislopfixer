@@ -17,7 +17,7 @@ from ..engine.scoring import file_score, project_score_from_findings
 
 AUTO_FIX_FLOOR = 0.60  # bulk auto-fix skips findings below this confidence
 from .base import AdaptiveScreen
-from ..screens.modal import PromptModal
+from ..screens.modal import ConfirmModal, PromptModal
 from ..theme import (
     ACCENT,
     BAD,
@@ -353,16 +353,29 @@ class ResultsScreen(AdaptiveScreen):
             return node.data
         return None
 
-    def _record(self, f: Finding) -> None:
-        """Persist how a finding was handled, so re-scans don't re-report it."""
+    def _record(self, f: Finding, *, flush: bool = True) -> None:
+        """Persist how a finding was handled, so re-scans don't re-report it.
+
+        Pass ``flush=False`` inside a bulk loop, then call :meth:`_flush_store`
+        once afterwards to collapse N disk writes into one.
+        """
         store = getattr(self.app, "store", None)
         if store is not None:
-            store.record(f)
+            store.record(f, flush=flush)
 
-    def _refresh_node(self, f: Finding) -> None:
+    def _flush_store(self) -> None:
+        store = getattr(self.app, "store", None)
+        if store is not None:
+            store.flush()
+
+    def _refresh_label(self, f: Finding) -> None:
+        """Repaint a leaf's label only — no detail-pane redraw."""
         node = self._leaf_nodes.get(f.key)
         if node is not None:
             node.set_label(self._leaf_label(f))
+
+    def _refresh_node(self, f: Finding) -> None:
+        self._refresh_label(f)
         self.query_one("#detail", Static).update(self._detail(f))
 
     def _refresh_counters(self) -> None:
@@ -377,9 +390,22 @@ class ResultsScreen(AdaptiveScreen):
         self.query_one("#c-left", StatChip).set_target(remaining)
 
     def _advance(self) -> None:
+        """Move the cursor to the next *finding* leaf, skipping header rows.
+
+        A plain cursor-down can land on a category/file node, which leaves the
+        detail pane stale; keep stepping until we hit a Finding or the bottom.
+        """
         tree = self._tree()
-        if tree is not None:
+        if tree is None:
+            return
+        for _ in range(len(self._findings) + 4):  # bounded; never loops forever
+            before = tree.cursor_line
             tree.action_cursor_down()
+            if tree.cursor_line == before:  # already at the bottom
+                break
+            node = tree.cursor_node
+            if node is not None and isinstance(node.data, Finding):
+                break
 
     # ----------------------------------------------------------------- actions
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
@@ -452,9 +478,11 @@ class ResultsScreen(AdaptiveScreen):
         for g in self._findings:
             if g.status is Status.OPEN and (g.rule_id, g.matched_text) == sig:
                 g.status = Status.IGNORED
-                self._record(g)
-                self._refresh_node(g)
+                self._record(g, flush=False)
+                self._refresh_label(g)
                 n += 1
+        self._flush_store()
+        self.query_one("#detail", Static).update(self._detail(f))
         self._refresh_counters()
         token = f.matched_text.strip() or f.message
         extra = f" (+{n - 1} elsewhere)" if n > 1 else ""
@@ -471,12 +499,34 @@ class ResultsScreen(AdaptiveScreen):
         if not targets:
             self.notify("No automatic fixes available.", severity="warning", timeout=2)
             return
+        detail = f"Rewrites {len(targets)} file location(s). Backups are kept (.aislopfixer.bak)."
+        if skipped:
+            detail += f"  {skipped} low-confidence finding(s) left untouched."
+
+        def callback(ok: bool | None) -> None:
+            if ok:
+                self._apply_auto(targets, skipped)
+
+        self.app.push_screen(
+            ConfirmModal(
+                f"Apply {len(targets)} automatic fix(es)?",
+                detail,
+            ),
+            callback,
+        )
+
+    def _apply_auto(self, targets: list[Finding], skipped: int) -> None:
         n = 0
         for f in targets:
             if fixer.apply_fix(f, None):
-                self._record(f)
-                self._refresh_node(f)
+                self._record(f, flush=False)
+                self._refresh_label(f)
                 n += 1
+        self._flush_store()
+        # repaint the detail pane for whatever the cursor is on now
+        current = self._current()
+        if current is not None:
+            self.query_one("#detail", Static).update(self._detail(current))
         self._refresh_counters()
         extra = f" (skipped {skipped} low-confidence)" if skipped else ""
         self.notify(

@@ -57,6 +57,7 @@ class SummaryScreen(AdaptiveScreen):
     MIN_HEIGHT = 20
 
     BINDINGS = [
+        ("b", "back", "Back to findings"),
         ("r", "rescan", "Scan again"),
         ("n", "new_folder", "New folder"),
         ("q", "quit", "Quit"),
@@ -129,6 +130,7 @@ class SummaryScreen(AdaptiveScreen):
             if not last:
                 t.append("        ", style=DIM)
 
+        opt("B", "Back")
         opt("R", "Scan again")
         opt("N", "New folder")
         opt("Q", "Quit", last=True)
@@ -144,6 +146,9 @@ class SummaryScreen(AdaptiveScreen):
         self.query_one("#s-skip", CountUp).set_target(skipped)
         self.query_one("#s-left", CountUp).set_target(remaining)
         self.call_after_refresh(self._fit)
+
+    def action_back(self) -> None:
+        self.app.show_results(self._findings)
 
     def action_rescan(self) -> None:
         self.app.rescan()

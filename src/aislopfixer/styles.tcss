@@ -43,6 +43,12 @@ Typewriter {
     color: #36e2e6;
     margin-top: 2;
 }
+#splash-version {
+    position: absolute;
+    bottom: 1;
+    right: 1;
+    color: #5b647a;
+}
 
 /* ---------- Path ---------- */
 PathScreen {

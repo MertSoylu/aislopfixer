@@ -81,8 +81,12 @@ class Store:
         except OSError:
             pass
 
-    def record(self, f: Finding) -> None:
-        """Persist how a finding was handled (its status drives suppression)."""
+    def record(self, f: Finding, *, flush: bool = True) -> None:
+        """Persist how a finding was handled (its status drives suppression).
+
+        Pass ``flush=False`` inside a bulk loop to skip the per-item disk write,
+        then call :meth:`flush` once at the end.
+        """
         key = (f.rule_id, f.matched_text, f.file, f.line)
         self._ledger[key] = {
             "rule_id": f.rule_id,
@@ -94,6 +98,11 @@ class Store:
             "status": f.status.value,
             "updated": _now(),
         }
+        if flush:
+            self._save_ledger()
+
+    def flush(self) -> None:
+        """Write the ledger to disk (use after batched ``record(flush=False)``)."""
         self._save_ledger()
 
     def _suppressed(self) -> set[tuple[str, str, str]]:

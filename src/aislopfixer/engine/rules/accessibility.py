@@ -108,9 +108,10 @@ class AccessibilityRule:
                     message="Empty heading element",
                     start=m.start(),
                     end=m.end(),
-                    fixability=Fixability.AUTO,
-                    suggested_fix="Remove the empty heading",
-                    replacement="",
+                    fixability=Fixability.PROMPT,
+                    suggested_fix="Add content or remove the empty heading",
+                    replace_template="{value}",
+                    prompt_label="heading content",
                 )
             )
 

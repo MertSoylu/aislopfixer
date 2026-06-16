@@ -9,6 +9,7 @@ from textual.widgets import Static
 
 from .base import AdaptiveScreen
 from ..widgets import Logo, Typewriter
+from .. import __version__
 
 
 class SplashScreen(AdaptiveScreen):
@@ -27,6 +28,7 @@ class SplashScreen(AdaptiveScreen):
             yield Logo()
             yield Typewriter("Detect & fix AI-generated slop in your web project")
             yield Static("PRESS  ENTER  TO  BEGIN", id="splash-hint")
+            yield Static(f"v{__version__}", id="splash-version")
 
     def on_mount(self) -> None:
         box = self.query_one("#splash-box")

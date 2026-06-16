@@ -45,6 +45,14 @@ class Done(Message):
         super().__init__()
 
 
+class Failed(Message):
+    """The scan worker raised; carries the error text for display."""
+
+    def __init__(self, error: str) -> None:
+        self.error = error
+        super().__init__()
+
+
 class ScanScreen(AdaptiveScreen):
     MIN_WIDTH = 80
     MIN_HEIGHT = 20
@@ -101,28 +109,31 @@ class ScanScreen(AdaptiveScreen):
 
     @work(thread=True)
     def _scan(self) -> None:
-        total = count_eligible(self._path)
-        self.post_message(SetTotal(total))
-        # spread tiny scans over ~1.2s so the animation is visible; ~0 for big repos
-        delay = min(0.04, 1.2 / total) if total else 0.0
-        store = getattr(self.app, "store", None)
-        files: list[SourceFile] = []
-        findings: list[Finding] = []
-        for sf in iter_files(self._path):
-            file_findings = run_file_rules(sf)
+        try:
+            total = count_eligible(self._path)
+            self.post_message(SetTotal(total))
+            # spread tiny scans over ~1.2s so the animation is visible; ~0 for big repos
+            delay = min(0.04, 1.2 / total) if total else 0.0
+            store = getattr(self.app, "store", None)
+            files: list[SourceFile] = []
+            findings: list[Finding] = []
+            for sf in iter_files(self._path):
+                file_findings = run_file_rules(sf)
+                if store is not None:
+                    file_findings = store.filter(file_findings)
+                files.append(sf)
+                findings.extend(file_findings)
+                self.post_message(FileDone(sf.rel_path, file_findings))
+                if delay:
+                    time.sleep(delay)
+            self.post_message(CrossStart())
+            cross = run_cross_rules(files)
             if store is not None:
-                file_findings = store.filter(file_findings)
-            files.append(sf)
-            findings.extend(file_findings)
-            self.post_message(FileDone(sf.rel_path, file_findings))
-            if delay:
-                time.sleep(delay)
-        self.post_message(CrossStart())
-        cross = run_cross_rules(files)
-        if store is not None:
-            cross = store.filter(cross)
-        findings.extend(cross)
-        self.post_message(Done(findings))
+                cross = store.filter(cross)
+            findings.extend(cross)
+            self.post_message(Done(findings))
+        except Exception as exc:  # noqa: BLE0001 — surface any engine failure to the UI
+            self.post_message(Failed(f"{type(exc).__name__}: {exc}"))
 
     def on_set_total(self, message: SetTotal) -> None:
         self._total = message.total
@@ -163,11 +174,26 @@ class ScanScreen(AdaptiveScreen):
     def on_done(self, message: Done) -> None:
         self.query_one("#scan-prog", ProgressBar).update(progress=100)
         total = len(message.findings)
+        spinner = self.query_one("#scan-spinner", Spinner)
+        spinner.stop()
         done = Text()
         done.append("✓ ", style=f"bold {OK}")
         done.append(f"Scan complete — {total} issue(s) found", style=_TEXT)
-        self.query_one("#scan-spinner", Spinner).set_label(done)
+        spinner.set_label(done)
         self.query_one("#scan-current", Static).update(
             Text("opening report…", style=_FAINT)
         )
         self.set_timer(0.8, lambda: self.app.show_results(message.findings))
+
+    def on_failed(self, message: Failed) -> None:
+        spinner = self.query_one("#scan-spinner", Spinner)
+        spinner.stop()
+        err = Text()
+        err.append("✗ ", style="bold #f38ba8")
+        err.append("Scan failed", style=_TEXT)
+        spinner.set_label(err)
+        detail = Text(no_wrap=True, overflow="ellipsis")
+        detail.append(message.error, style="#f38ba8")
+        self.query_one("#scan-current", Static).update(detail)
+        # let the user out with whatever was collected (empty) rather than hang
+        self.set_timer(2.0, lambda: self.app.show_results([]))

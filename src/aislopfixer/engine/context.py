@@ -32,6 +32,9 @@ def file_kind(path: str) -> str:
 # -------------------------------------------------------------- prose regions
 _TAG_RE = re.compile(r"<[^>]*>", re.S)
 _SKIP_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.I | re.S)
+_SKIP_INTERP = re.compile(
+    r"\$\{[^{}]*\}|\{\{[^{}]*\}\}|\{[^{}]*\}"
+)
 _MD_FENCE = re.compile(r"```.*?```|~~~.*?~~~", re.S)
 _MD_INLINE = re.compile(r"`[^`]*`")
 
@@ -50,21 +53,12 @@ def _gaps(blocked: list[tuple[int, int]], n: int) -> list[tuple[int, int]]:
 
 
 def _html_text_spans(text: str) -> list[tuple[int, int]]:
-    """Text-node spans (between tags), excluding <script>/<style> bodies."""
-    skip = [(m.start(), m.end()) for m in _SKIP_BLOCK.finditer(text)]
-
-    def in_skip(p: int) -> bool:
-        return any(a <= p < b for a, b in skip)
-
-    spans: list[tuple[int, int]] = []
-    last = 0
-    for m in _TAG_RE.finditer(text):
-        if last < m.start() and not in_skip(last):
-            spans.append((last, m.start()))
-        last = m.end()
-    if last < len(text) and not in_skip(last):
-        spans.append((last, len(text)))
-    return spans
+    """Text-node spans (between tags), excluding <script>/<style> bodies
+    and template interpolations ({...} / {{...}} / ${...})."""
+    blocked = [(m.start(), m.end()) for m in _SKIP_BLOCK.finditer(text)]
+    blocked += [(m.start(), m.end()) for m in _SKIP_INTERP.finditer(text)]
+    blocked += [(m.start(), m.end()) for m in _TAG_RE.finditer(text)]
+    return _gaps(blocked, len(text))
 
 
 def _md_text_spans(text: str) -> list[tuple[int, int]]:

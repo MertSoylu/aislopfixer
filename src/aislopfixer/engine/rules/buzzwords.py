@@ -61,7 +61,6 @@ _WORDS = [
     "navigating the",
     "comprehensive suite",
     "unparalleled",
-    "bustling",
 ]
 
 _DENSITY_THRESHOLD = 5
