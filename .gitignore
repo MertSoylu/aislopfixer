@@ -30,5 +30,8 @@ venv/
 # backup
 *.aislopfixer.bak
 
+# sample project (dev/demo only)
+sample/
+
 # project-specific
 .aislop_blueprint_verify.json
