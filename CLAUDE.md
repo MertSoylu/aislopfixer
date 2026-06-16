@@ -82,6 +82,13 @@ Extensions: `.html .htm .jsx .tsx .js .ts .mjs .cjs .vue .svelte .astro .md .mdx
 4. If its confidence needs tuning, add a `rule_id`-prefix entry to `RULE_OVERRIDE` in `engine/scoring.py`.
 5. Add tests under `tests/` (rule tests typically build `SourceFile`s and assert on findings; remember `registry.reset()`).
 
+## Release checklist
+
+When publishing a new version:
+1. Bump `version` in **`package.json`**, **`pyproject.toml`** and **`src/aislopfixer/__init__.py`** (all three must match).
+2. Update **`README.md`** — change the "Current version" line under the badges to reflect the new version.
+3. Run `npm publish` and/or `git tag v<version> && git push --tags`.
+
 ## Notes
 
 - `Category` has **6** values (`AI_LEAK, PLACEHOLDER, BUZZWORD, DUPLICATE, ACCESSIBILITY, CODE_SLOP`) and there are **8** rule modules — the README/AGENTS.md diagrams predate `CODE_SLOP`, `scoring.py`, and `store.py`, so trust the code over those docs.

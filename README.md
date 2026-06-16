@@ -7,6 +7,8 @@
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+**Current version: 0.1.1** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer) / [PyPI](https://pypi.org/project/aislopfixer/)
+
 AI coding assistants leave traces everywhere: leftover "Certainly! Here is…" preambles, lorem ipsum, `[Your Company Name]`, dead `href="#"` links, `alt="image"`, and a fog of "cutting-edge, seamless, revolutionary" buzzwords. **aislopfixer** scans your codebase, surfaces every instance in an animated terminal UI, and lets you fix them one keystroke at a time — or all at once.
 
 Everything runs **locally**. No network calls, no LLM, no telemetry. Just deterministic rules.

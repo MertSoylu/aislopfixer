@@ -65,6 +65,10 @@ src/aislopfixer/
 4. `ResultsScreen` → tree (left) + detail panel (right). Keybindings: `f` fix, `s` skip, `a` annotate, `p` fix all auto, `q` summary/modal.
 5. `SummaryScreen` → per-category counts.
 
+## Release
+
+Version lives in 3 places: `package.json`, `pyproject.toml`, `src/aislopfixer/__init__.py`. Keep in sync. Update version in README.md badges too.
+
 ## Dependencies
 
 - Python ≥3.11, setuptools build backend, `textual>=0.80`.
