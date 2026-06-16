@@ -1,11 +1,13 @@
 {
   "name": "@mertsoylu/aislopfixer",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Terminal TUI that finds and fixes AI-generated slop in local web projects (offline, rule-based).",
   "bin": {
     "aislopfixer": "bin/cli.js"
   },
   "scripts": {
+    "dev": "python -m aislopfixer ./sample",
+    "dev:watch": "textual run --dev src/aislopfixer/app.py -- ./sample",
     "prepack": "node scripts/clean.mjs"
   },
   "files": [

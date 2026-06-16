@@ -44,10 +44,11 @@ Typewriter {
     margin-top: 2;
 }
 #splash-version {
-    position: absolute;
-    bottom: 1;
-    right: 1;
+    dock: bottom;
+    width: 100%;
+    content-align: right bottom;
     color: #5b647a;
+    padding: 0 1 1 0;
 }
 
 /* ---------- Path ---------- */
