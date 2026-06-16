@@ -1,0 +1,38 @@
+{
+  "name": "@mertsoylu/aislopfixer",
+  "version": "0.1.1",
+  "description": "Terminal TUI that finds and fixes AI-generated slop in local web projects (offline, rule-based).",
+  "bin": {
+    "aislopfixer": "bin/cli.js"
+  },
+  "scripts": {
+    "prepack": "node scripts/clean.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "ai",
+    "slop",
+    "linter",
+    "tui",
+    "cli",
+    "textual",
+    "placeholder",
+    "lorem-ipsum",
+    "code-quality",
+    "web"
+  ],
+  "author": "mertsoylu",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,15 @@
+# Python build/cache artifacts (excluded even inside files-allowlisted dirs)
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+
+# dev-only / scratch
+tests
+shots
+sample
+docs
+fp_test.mjs
+.aislop_blueprint_verify.json
+AGENTS.md
