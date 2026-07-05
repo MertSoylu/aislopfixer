@@ -16,7 +16,7 @@ AI-generated code ships with a recognizable class of defects — and they are no
 Everything runs **locally**. No network calls, no LLM, no telemetry. Deterministic rules you can read.
 
 <p align="center">
-  <img src="shots/3-results.svg" alt="aislopfixer results view" width="800">
+  <img src="https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/3-results.svg" alt="aislopfixer results view" width="800">
 </p>
 
 ---
@@ -70,11 +70,11 @@ Confirm the target folder (pre-filled from the command line), watch the scan run
 
 | Splash | Scan |
 |--------|------|
-| ![splash](shots/1-splash.svg) | ![scan](shots/2-scan.svg) |
+| ![splash](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/1-splash.svg) | ![scan](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/2-scan.svg) |
 
 ### 2 · Triage the findings
 
-![results — findings tree, confidence meters, source excerpt and fix preview](shots/3-results.svg)
+![results — findings tree, confidence meters, source excerpt and fix preview](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/3-results.svg)
 
 Left: findings grouped by **category → file**, each file with a mini slop bar, each finding with its severity and fix-type icon. Right: the selected finding in full — confidence meter, the offending source lines with the match highlighted, and a preview of exactly what a fix would change. Handle each finding with one key (`?` shows this list in-app):
 
@@ -95,7 +95,7 @@ Three fix types: **auto** deletes/replaces outright (chat residue, lorem ipsum, 
 
 ### 3 · Hand what's left to your AI assistant
 
-![export picker — fix brief, JSON or SARIF](shots/5-export.svg)
+![export picker — fix brief, JSON or SARIF](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/5-export.svg)
 
 Half the findings need judgement — exactly what a coding agent is good at once it's told *precisely* what's wrong and where. `x` opens the export picker:
 
@@ -106,7 +106,7 @@ Everything lands in `.aislopfixer/`, which is never itself scanned.
 
 ### 4 · Summary
 
-![summary — slop score, per-category bars, next steps](shots/4-summary.svg)
+![summary — slop score, per-category bars, next steps](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/4-summary.svg)
 
 Slop score, severity breakdown, animated per-category fixed/found bars — plus where the report went and what to do next (`b` back · `r` rescan · `n` new folder · `q` quit).
 
