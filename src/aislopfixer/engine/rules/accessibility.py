@@ -1,4 +1,12 @@
-"""Detect accessibility and meta-tag slop in markup."""
+"""Detect image-accessibility slop in markup.
+
+Deliberately narrow: generic document-level lint (missing <title>, meta
+description, lang attribute, empty headings) is *not* AI slop — modern
+scaffolds and generators get those right, and flagging them is SEO-linter
+noise. What still ships broken is image alt text: images rendered from data
+in generated JSX/HTML with no ``alt`` at all, or a lazy generic one
+("image", "logo") that a model stamped in without looking at the picture.
+"""
 
 from __future__ import annotations
 
@@ -14,14 +22,6 @@ _ALT = re.compile(r"\balt\s*=\s*(['\"])(.*?)\1", re.I | re.S)
 # Any alt binding counts as present: quoted alt="", JSX/Svelte alt={expr},
 # Vue :alt/v-bind:alt (\b covers the colon) and Angular [alt]="expr".
 _HAS_ALT = re.compile(r"(?:\balt|\[alt\])\s*=", re.I)
-_EMPTY_HEADING = re.compile(r"<h([1-6])\b[^>]*>\s*</h\1>", re.I)
-_HTML_TAG = re.compile(r"<html\b[^>]*>", re.I)
-_HAS_HTML = re.compile(r"<html\b", re.I)
-_HAS_HEAD = re.compile(r"<head\b", re.I)
-_HAS_LANG = re.compile(r"\blang\s*=", re.I)
-_TITLE = re.compile(r"<title\b[^>]*>\s*(.*?)\s*</title>", re.I | re.S)
-_META_DESC = re.compile(r"<meta\b[^>]*name\s*=\s*['\"]description['\"][^>]*>", re.I)
-_META_CONTENT = re.compile(r"content\s*=\s*(['\"])(.*?)\1", re.I | re.S)
 
 _GENERIC_ALT = {
     "image", "img", "photo", "picture", "placeholder", "alt text",
@@ -50,7 +50,7 @@ class AccessibilityRule:
     def scan(self, sf: SourceFile) -> list[Finding]:
         # Accessibility tells only mean something in markup. Pure code/CSS/Markdown
         # files only carry HTML inside string literals (e.g. an email template in
-        # a .js file), where document-level checks produce nothing but noise.
+        # a .js file), where these checks produce nothing but noise.
         kind = file_kind(sf.rel_path)
         if kind not in ("html", "jsx"):
             return []
@@ -97,90 +97,4 @@ class AccessibilityRule:
                             prompt_label="alt text",
                         )
                     )
-
-        for m in _EMPTY_HEADING.finditer(text):
-            out.append(
-                build_finding(
-                    sf,
-                    rule_id="a11y.empty_heading",
-                    category=self.category,
-                    severity=Severity.WARNING,
-                    message="Empty heading element",
-                    start=m.start(),
-                    end=m.end(),
-                    fixability=Fixability.PROMPT,
-                    suggested_fix="Add content or remove the empty heading",
-                    replace_template="{value}",
-                    prompt_label="heading content",
-                )
-            )
-
-        # Document-level checks apply to real HTML documents only. A JSX root
-        # (Next.js layout/_document) renders <html>/<head> too, but its title,
-        # description and lang come from the framework's metadata API, not markup.
-        if kind == "html" and (_HAS_HTML.search(text) or _HAS_HEAD.search(text)):
-            if _TITLE.search(text) is None:
-                out.append(
-                    build_finding(
-                        sf,
-                        rule_id="a11y.no_title",
-                        category=self.category,
-                        severity=Severity.WARNING,
-                        message="HTML document has no <title>",
-                        start=0,
-                        end=0,
-                        fixability=Fixability.MANUAL,
-                        suggested_fix="Add a <title> in <head>",
-                    )
-                )
-            mm = _META_DESC.search(text)
-            if mm is None:
-                out.append(
-                    build_finding(
-                        sf,
-                        rule_id="a11y.no_meta_desc",
-                        category=self.category,
-                        severity=Severity.INFO,
-                        message='Missing <meta name="description">',
-                        start=0,
-                        end=0,
-                        fixability=Fixability.MANUAL,
-                        suggested_fix="Add a meta description",
-                    )
-                )
-            else:
-                cm = _META_CONTENT.search(mm.group(0))
-                desc = cm.group(2).strip() if cm else ""
-                if len(desc) < 20:
-                    out.append(
-                        build_finding(
-                            sf,
-                            rule_id="a11y.weak_meta_desc",
-                            category=self.category,
-                            severity=Severity.INFO,
-                            message="Meta description is empty or too short",
-                            start=mm.start(),
-                            end=mm.end(),
-                            fixability=Fixability.MANUAL,
-                            suggested_fix="Write a 50-160 character description",
-                        )
-                    )
-
-        ht = _HTML_TAG.search(text) if kind == "html" else None
-        if ht is not None and not _HAS_LANG.search(ht.group(0)):
-            out.append(
-                build_finding(
-                    sf,
-                    rule_id="a11y.no_lang",
-                    category=self.category,
-                    severity=Severity.INFO,
-                    message="<html> missing lang attribute",
-                    start=ht.start(),
-                    end=ht.end(),  # whole tag is the anchor (unique relocation)
-                    fixability=Fixability.PROMPT,
-                    suggested_fix='Add a language, e.g. lang="en"',
-                    replace_template=_insert_attr_template(ht.group(0), 5, ' lang="{value}"'),
-                    prompt_label="language code (e.g. en)",
-                )
-            )
         return out

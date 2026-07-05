@@ -36,6 +36,11 @@ REPORT = "report.md"
 # Statuses whose findings must NOT come back on the next scan.
 _SUPPRESS = {Status.FIXED.value, Status.ANNOTATED.value, Status.IGNORED.value}
 
+# A rule dismissed this many times in a project is treated as noisy there.
+NOISY_THRESHOLD = 3
+# How much to scale a noisy rule's confidence on later scans (de-prioritize).
+NOISY_DEMOTION = 0.5
+
 _STATUS_ICON = {
     Status.FIXED.value: "✓",
     Status.ANNOTATED.value: "✎",
@@ -111,6 +116,27 @@ class Store:
             for e in self._ledger.values()
             if e.get("status") in _SUPPRESS
         }
+
+    # ----------------------------------------------------------------- adaptive
+    def ignored_count(self, rule_id: str) -> int:
+        """How many distinct findings of ``rule_id`` the user marked not-slop."""
+        return sum(
+            1 for e in self._ledger.values()
+            if e.get("rule_id") == rule_id and e.get("status") == Status.IGNORED.value
+        )
+
+    def noisy_rules(self, threshold: int = NOISY_THRESHOLD) -> set[str]:
+        """Rules dismissed as not-slop ≥ ``threshold`` times in this project.
+
+        The tool learns from the user: a rule they keep rejecting is noisy *here*,
+        so its findings are de-prioritized on later scans (see scanner demotion).
+        """
+        counts: dict[str, int] = {}
+        for e in self._ledger.values():
+            if e.get("status") == Status.IGNORED.value:
+                rid = e.get("rule_id", "")
+                counts[rid] = counts.get(rid, 0) + 1
+        return {rid for rid, c in counts.items() if c >= threshold}
 
     # -------------------------------------------------------------------- query
     def filter(self, findings: list[Finding]) -> list[Finding]:

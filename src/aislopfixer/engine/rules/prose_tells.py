@@ -84,6 +84,29 @@ class ProseTellRule(PatternRule):
             suggested_fix="Delete the filler phrase",
         ),
         Pattern(
+            id="prose.not_just_contrast",
+            regex=re.compile(
+                r"\bnot just\b[^.!?\n]{2,60}?[—;,-]\s*(?:it'?s|it is|they'?re)\b"
+                r"|\bmore than just\s+(?:a|an|another)\b",
+                _I,
+            ),
+            severity=Severity.INFO,
+            fixability=Fixability.MANUAL,
+            message="'not just X — it's Y' — signature LLM contrast construction",
+            suggested_fix="Say what it is directly, without the staged contrast",
+        ),
+        Pattern(
+            id="prose.whether_youre",
+            regex=re.compile(
+                r"\bwhether you'?re\b[^.!?\n]{3,80}\bor\b",
+                _I,
+            ),
+            severity=Severity.INFO,
+            fixability=Fixability.MANUAL,
+            message="'whether you're X or Y' — LLM audience-hedging opener",
+            suggested_fix="Address the actual audience directly",
+        ),
+        Pattern(
             id="prose.when_it_comes_to",
             regex=re.compile(r"\bwhen it comes to\b", _I),
             severity=Severity.INFO,

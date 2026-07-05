@@ -71,13 +71,6 @@ def test_img_alt_fix_inserts_attribute(tmp_path):
     assert '<img alt="Company logo" src="logo.png">' in p.read_text(encoding="utf-8")
 
 
-def test_html_lang_fix_inserts_attribute(tmp_path):
-    p = tmp_path / "i.html"
-    p.write_text("<html>\n<head><title>Hi</title></head>\n</html>\n", encoding="utf-8")
-    assert fixer.apply_fix(_get(_scan(p), "a11y.no_lang"), "en")
-    assert '<html lang="en">' in p.read_text(encoding="utf-8")
-
-
 def test_multiple_img_alt_fixes_hit_distinct_tags(tmp_path):
     # Each <img> shares the bare "<img" prefix, so a generic anchor would relocate
     # every later fix onto the first image. The full-tag anchor keeps them apart.

@@ -1,17 +1,19 @@
 # aislopfixer
 
-> Terminal TUI that finds and fixes **AI-generated slop** in local web projects — fully offline, rule-based, no API keys.
+> Find and fix **AI-generated slop** in web projects — hallucinated dependencies, security holes, swallowed errors, leftover chat residue and LLM marketing prose. Terminal UI + CI mode. Fully offline, rule-based, no API keys.
 
 [![npm](https://img.shields.io/npm/v/@mertsoylu/aislopfixer.svg)](https://www.npmjs.com/package/@mertsoylu/aislopfixer)
 [![PyPI](https://img.shields.io/pypi/v/aislopfixer.svg)](https://pypi.org/project/aislopfixer/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Current version: 0.1.1** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer) / [PyPI](https://pypi.org/project/aislopfixer/)
+**Current version: 0.3.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer) / [PyPI](https://pypi.org/project/aislopfixer/)
 
-AI coding assistants leave traces everywhere: leftover "Certainly! Here is…" preambles, lorem ipsum, `[Your Company Name]`, dead `href="#"` links, `alt="image"`, and a fog of "cutting-edge, seamless, revolutionary" buzzwords. **aislopfixer** scans your codebase, surfaces every instance in an animated terminal UI, and lets you fix them one keystroke at a time — or all at once.
+AI-generated code ships with a recognizable class of defects — and they are not the old "As an AI language model…" giveaways. Today's models hallucinate package imports that break your build (and invite [slopsquatting](https://en.wikipedia.org/wiki/Slopsquatting) attacks), wrap everything in `try/catch` and silently swallow the error, store JWTs in `localStorage`, build SQL with template literals, leave `// ... rest of the code ...` elision markers behind, and coat every landing page in "It's not just a tool — it's a game changer" prose.
 
-Everything runs **locally**. No network calls, no LLM, no telemetry. Just deterministic rules.
+**aislopfixer** scans your project for exactly this class of mistakes, ranks each finding by confidence, and lets you fix them one keystroke at a time — or gate your CI on them.
+
+Everything runs **locally**. No network calls, no LLM, no telemetry. Deterministic rules you can read.
 
 <p align="center">
   <img src="shots/3-results.svg" alt="aislopfixer results view" width="800">
@@ -23,192 +25,203 @@ Everything runs **locally**. No network calls, no LLM, no telemetry. Just determ
 
 ```bash
 npm install -g @mertsoylu/aislopfixer
-aislopfixer ./path/to/site
+aislopfixer ./path/to/project
 ```
 
 Requires **Python ≥ 3.11** on your machine. On first run the npm launcher builds a small isolated Python environment under `~/.aislopfixer/` (needs internet once), then starts instantly thereafter.
 
-### Or from source (Python)
+Or straight from PyPI / source:
 
 ```bash
-pip install -e .
-aislopfixer ./path/to/site
-python -m aislopfixer ./sample   # module form
-```
-
-Try it on the bundled demo:
-
-```bash
-aislopfixer ./sample
+pip install aislopfixer          # or: pip install -e . from a checkout
+aislopfixer ./path/to/project
 ```
 
 ## What it detects
 
-| Category | Examples | Fix |
-|----------|----------|-----|
-| **AI leaks** | "As an AI language model…", "Certainly! Here is…", "I hope this helps", "Let me know if…" | AUTO / MANUAL |
-| **Placeholders / dummy data** | lorem ipsum, `[Your Company Name]`, `example.com`, dummy emails/phones, `TODO`, placeholder images, `href="#"`, `javascript:void(0)` | AUTO / PROMPT |
-| **Buzzwords** | "cutting-edge", "seamless", "revolutionize", "unlock the power…" + density flag | MANUAL |
-| **Duplicates** | repeated content blocks across files | MANUAL |
-| **Accessibility / meta** | missing or `alt="image"`, missing `<title>`, weak meta description, empty headings | PROMPT / MANUAL |
-| **Code slop** | elision markers (`// ... existing code ...`), stub bodies/ comments, `debugger;`, throwaway `console.log`, restate-the-code comments, Markdown emoji headers/ checkmark bullets/ boilerplate sections/ bold-lead listicles/ scaffolding lead-ins | AUTO / MANUAL |
-| **Prose tells** | "not only … but also", "dive in", "in this article", stock connectives, "when it comes to", em-dash overuse | MANUAL |
+Only mistakes that **current-generation models still make** — trivial lint is deliberately out of scope.
 
-## Usage
+| Category | What | Why it matters |
+|----------|------|----------------|
+| 🧨 **Hallucinated imports** | `import x from 'pkg'` where `pkg` is in no `package.json` on the path to the root (monorepo-aware; Node built-ins, tsconfig `paths`, `@/`-style aliases all respected); named imports the target module demonstrably never exports; unused leftover imports | Build breaks; typo-squatted registry names are a supply-chain attack vector |
+| 🔓 **Security** | XSS sinks (`innerHTML`, `dangerouslySetInnerHTML`, `v-html`), SQL built by interpolation/concat, command injection, `eval`, disabled TLS validation, wildcard CORS, weak crypto, `Math.random()` secrets, hardcoded real keys (AWS/GitHub/OpenAI/Stripe/…, JWTs, PEM blocks, high-entropy literals), tokens in `localStorage`, `postMessage(…, '*')` | Roughly half of generated snippets carry a known weakness; these are the concrete, offline-detectable shapes |
+| 🕳️ **Swallowed errors** | `catch (e) {}` and `.catch(() => {})` — including comment-only bodies; log-only catches (`catch (e) { console.error(e) }`); catches that silently `return null`/`[]`/`{}` | The try/catch-everything habit makes failures vanish silently |
+| ✂️ **Broken pastes** | Elision markers (`// ... existing code ...`), not-implemented stubs, `debugger;`, leftover ``` fences from chat, unresolved merge conflict markers | The file is literally incomplete or unparseable |
+| 🔑 **Placeholder secrets** | `YOUR_API_KEY_HERE`, `sk-xxxx…`, `password: "changeme"` | Fails at runtime and normalizes hardcoding credentials |
+| 🗑️ **Placeholders / dummy data** | lorem ipsum, `[Your Company Name]`, `example.com`, fake API endpoints (`api.yourdomain.com`), 555-phones, `href="#"`, placeholder images | Ships as-is embarrassingly often |
+| 💬 **AI chat residue** | "As an AI language model…", "Certainly! Here is…", "I hope this helps" | Copy-pasted chat answers in production copy |
+| 📢 **LLM prose tells** | "It's not just X — it's Y", "Whether you're … or …", "delve", "seamlessly", em-dash overuse, buzzword density, emoji-headed README sections, checkmark feature lists | The house style of machine marketing copy |
+| 🎨 **AI slop design** | The stock purple→pink hero gradient (Tailwind and raw CSS), invented social proof ("Trusted by 10,000+ developers"), emoji-decorated UI copy (🚀✨⚡ feature lists) | The instantly recognizable AI landing-page aesthetic |
+| 🖼️ **Image accessibility** | Missing or generic (`alt="image"`) alt text | The one a11y mistake generators still make |
+| 📋 **Cross-file duplicates** | The same (or lightly reworded) marketing paragraph pasted across pages; the same helper function re-emitted into several files instead of imported once | Word/token-shingle Jaccard clustering |
+| 💤 **Over-commenting** | Files where every other line is a `//` narration comment (directives like `eslint-disable` excluded) | The step-by-step-narrator habit of generated code |
+
+Context-aware by construction: `eval(` inside a string or comment is not flagged, buzzwords only count in human-visible prose (never identifiers), `[id]`/`[a-z]`/`[...slug]` framework tokens are never "placeholders".
+
+## Use it interactively (TUI)
 
 ```bash
-aislopfixer [PATH]
+aislopfixer ./my-site
 ```
 
-Run with a path to scan immediately, or run with no argument and enter the path in the UI.
+### 1 · Point it at a project
 
-### Keybindings (results view)
-
-| Key | Action |
-|-----|--------|
-| `f` | fix selected finding |
-| `s` | skip / allowlist |
-| `a` | annotate |
-| `p` | fix all `auto` findings |
-| `q` | summary / quit |
-
-### How fixing works
-
-- **auto** — clear junk is deleted or replaced outright (AI leaks, lorem ipsum, empty headings, debugger statements, throwaway console.log, emoji decorations).
-- **prompt** — you type the real value (emails, URLs, names, alt text). The template inserts your value into the right place.
-- **manual** — flagged only; annotate or skip.
-
-Every file is backed up to `<file>.aislopfixer.bak` before its first edit, and a diff is computed before each write. Findings are relocated by matched text after prior edits, so offsets stay correct across a fix session.
-
-## Features
-
-- **5 rule categories** — AI leaks, placeholders/buzzwords/duplicates/a11y + code slop and prose tells.
-- **Multi-framework** — HTML, React (JSX/TSX), Vue, Svelte, Astro, Markdown/MDX, plain JS/TS, CSS.
-- **Context-aware** — buzzwords only flag in human-visible prose, never in code identifiers. Self-annotation comments are never re-flagged.
-- **Smart placeholder detection** — `[id]`, `[checked]`, `[a-z]`, `[...slug]` (code/framework tokens) are ignored; `[Your Company Name]` is flagged.
-- **Code slop detection** — elision markers (`// ... rest of code unchanged`), stub bodies (`throw new Error('Not implemented')`), stub comments (`// your code here`), `debugger;`, throwaway `console.log('here')`, restate-the-code comments.
-- **Markdown tells** — emoji-prefixed headers, boilerplate sections, checkmark bullet lists, bold-lead listicles, scaffolding lead-ins.
-- **Cross-file duplicate detection** — same prose block pasted across multiple pages.
-- **Scoring** — per-finding confidence (0..1), per-file noisy-OR score, self-weighted project score. Confidence drives "fix all auto" thresholds.
-- **Allowlist** — confirmed false positives are remembered in `.aislopfixer/allowlist.json`, keyed by content (survives line edits).
-- **Persistent ledger** — resolved findings are recorded and suppressed on re-scans. Skipped findings re-surface intentionally.
-- **Report** — `.aislopfixer/report.md` written after each scan with category breakdowns.
-- **Animated TUI** — built on [Textual](https://textual.textualize.io/). Splash → path picker → scan progress → tree + detail → summary.
-- **100% offline** — rule-based, no API keys, no telemetry, no network calls.
-
-## Screenshots
+Confirm the target folder (pre-filled from the command line), watch the scan run:
 
 | Splash | Scan |
 |--------|------|
 | ![splash](shots/1-splash.svg) | ![scan](shots/2-scan.svg) |
 
-| Results | Summary |
-|---------|---------|
-| ![results](shots/3-results.svg) | ![summary](shots/4-summary.svg) |
+### 2 · Triage the findings
+
+![results — findings tree, confidence meters, source excerpt and fix preview](shots/3-results.svg)
+
+Left: findings grouped by **category → file**, each file with a mini slop bar, each finding with its severity and fix-type icon. Right: the selected finding in full — confidence meter, the offending source lines with the match highlighted, and a preview of exactly what a fix would change. Handle each finding with one key (`?` shows this list in-app):
+
+| Key | Action |
+|-----|--------|
+| `f` | fix selected finding (auto, or prompts you for the value) |
+| `p` | fix **all** safe automatic findings at once |
+| `a` | annotate in source |
+| `s` | skip (re-surfaces next scan) |
+| `i` | not slop — remembered forever, never reported again |
+| `x` | export — fix brief / JSON / SARIF |
+| `1 2 3` / `0` | filter by severity / clear |
+| `c` | cycle the confidence floor (all → 45 → 60 → 75%) |
+| `h` | hide already-handled findings |
+| `q` | summary |
+
+Three fix types: **auto** deletes/replaces outright (chat residue, lorem ipsum, `debugger;`) — every touched file is backed up to `<file>.aislopfixer.bak` first; **prompt** asks you for the real value (URLs, emails, alt text) and inserts it; **manual** (security, hallucinated imports) is a judgement call — annotate, fix by hand, or export it (next step).
+
+### 3 · Hand what's left to your AI assistant
+
+![export picker — fix brief, JSON or SARIF](shots/5-export.svg)
+
+Half the findings need judgement — exactly what a coding agent is good at once it's told *precisely* what's wrong and where. `x` opens the export picker:
+
+- **`b` fix brief** (`fix-prompt.md`, also copied to the clipboard) — every open finding with exact location, source excerpt, per-rule fix guidance, and guardrails so the agent fixes only what was found without introducing new slop. Paste it into Claude Code, Cursor or Copilot; the brief ends by telling the agent to verify with `aislopfixer --check`. The detector stays deterministic — the AI only executes a vetted work order.
+- **`j` JSON** (`findings.json`) / **`s` SARIF** (`findings.sarif`) — the same machine-readable output as `--json` / `--sarif`.
+
+Everything lands in `.aislopfixer/`, which is never itself scanned.
+
+### 4 · Summary
+
+![summary — slop score, per-category bars, next steps](shots/4-summary.svg)
+
+Slop score, severity breakdown, animated per-category fixed/found bars — plus where the report went and what to do next (`b` back · `r` rescan · `n` new folder · `q` quit).
+
+### It learns your project
+
+Everything you resolve or dismiss is remembered in `<project>/.aislopfixer/`:
+
+- **allowlist** — "not slop" verdicts, keyed by content so they survive edits and apply across files;
+- **ledger** — fixed/annotated findings never come back; skipped ones intentionally do;
+- **noise demotion** — a rule you dismiss 3+ times gets its confidence halved in that project;
+- **report.md** — human-readable snapshot after each scan.
+
+## Use it in CI / pre-commit
+
+```bash
+aislopfixer . --check                    # print findings, exit 1 if any warning+
+aislopfixer . --check --fail-on error    # only hard errors gate the build
+aislopfixer . --json                     # machine-readable output
+aislopfixer . --sarif > slop.sarif       # SARIF 2.1.0 for GitHub code scanning
+aislopfixer . --fix                      # apply safe auto-fixes, then report the rest
+aislopfixer . --check --min-confidence 0.8
+aislopfixer . --fix --prompt > fix-brief.md   # auto-fix the safe ones, brief your AI on the rest
+```
+
+Exit codes: `0` clean, `1` findings at/above `--fail-on` (default `warning`), `2` usage error. The project's `.aislopfixer` memory applies in CI too — vetted false positives stay silent (disable with `--no-store`).
+
+GitHub Actions — one step, PR annotations included via code scanning:
+
+```yaml
+- uses: mertsoylu/aislopfixer@main
+  with:
+    path: .
+    fail-on: error
+    sarif-file: slop.sarif        # optional
+- uses: github/codeql-action/upload-sarif@v3   # optional, annotates the PR
+  if: always()
+  with: { sarif_file: slop.sarif }
+```
+
+Or plain pip:
+
+```yaml
+- uses: actions/setup-python@v5
+  with: { python-version: "3.12" }
+- run: pip install aislopfixer
+- run: aislopfixer . --check --fail-on error
+```
+
+pre-commit:
+
+```yaml
+repos:
+  - repo: https://github.com/mertsoylu/aislopfixer
+    rev: v0.3.0
+    hooks:
+      - id: aislopfixer
+```
+
+## Configuration
+
+Optional `.aislopfixer.toml` at the project root — CLI flags always win:
+
+```toml
+disable = ["design.emoji_ui", "buzzword.delve"]  # rule-id prefixes to turn off
+ignore = ["legacy/**", "third_party/**"]          # path globs to skip entirely
+fail_on = "error"        # headless exit-code threshold (info|warning|error|never)
+min_confidence = 0.5     # headless reporting floor, 0..1
+```
+
+`disable` and `ignore` apply to the TUI and headless mode alike.
+
+## Scoring
+
+Every finding carries a confidence (0–1) from a per-rule table, falling back to category × severity. Weak signals **corroborate**: when several independent AI-authorship tells co-occur in one file (an elision marker + a stub + a debug log), every finding there gets boosted. File score is a noisy-OR; the project score is a self-weighted mean, so one sloppy file isn't diluted by fifty clean ones. Confidence gates bulk auto-fix (≥ 0.60) and is yours to threshold in CI.
+
+## Supported files
+
+`.html .htm .jsx .tsx .js .ts .mjs .cjs .vue .svelte .astro .md .mdx .css` — skips `node_modules`, build output, hidden dirs, repo-meta docs (README/LICENSE/CLAUDE/AGENTS…), files > 2 MB.
 
 ## Architecture
 
 ```
 src/aislopfixer/
-├── cli.py                    # argparse entrypoint
-├── __init__.py               # package metadata
-├── __main__.py               # python -m support
-├── app.py                    # Textual App, screen orchestration
-├── scanner.py                # walks dir, filters by ext/ignore/meta, yields SourceFile
-├── fixer.py                  # apply AUTO/PROMPT/MANUAL fixes, backups, diff preview, annotation
-├── allowlist.py              # persistent false-positive store (.aislopfixer/allowlist.json)
-├── store.py                  # per-project persistence (ledger, report, allowlist)
-├── theme.py                  # colors, icons, shimmer gradient
-├── styles.tcss               # Textual CSS (250 lines)
+├── cli.py            # entrypoint: TUI by default, --check/--json/--sarif/--prompt/--fix headless
+├── headless.py       # CI mode: text/JSON/SARIF/fix-brief rendering, exit codes, batch auto-fix
+├── pipeline.py       # the one scan pipeline both front-ends share
+├── prompter.py       # findings → fix brief for an AI coding assistant
+├── config.py         # .aislopfixer.toml: disable rules, ignore globs, thresholds
+├── app.py            # Textual App, screen orchestration
+├── scanner.py        # dir walk → SourceFile (ext/ignore/size filters)
+├── fixer.py          # AUTO/PROMPT/MANUAL fixes, backups, diff preview
+├── store.py          # .aislopfixer/ project memory (allowlist, ledger, report)
 ├── engine/
-│   ├── __init__.py
-│   ├── models.py             # SourceFile, Finding, enums (Category, Fixability, Severity, Status)
-│   ├── runner.py             # orchestrates rules, dedupes, collapses repeats, backfills confidence
-│   ├── registry.py           # @file_rule / @cross_rule decorators — rules self-register at import
-│   ├── pattern_rule.py       # base class for regex rules (Pattern dataclass + PatternRule)
-│   ├── context.py            # file_kind(), prose_regions(), in_any(), on_annotation_line()
-│   ├── scoring.py            # per-finding confidence, per-file noisy-OR, project self-weighted mean
-│   ├── util.py               # line_col(), make_snippet(), build_finding()
-│   └── rules/
-│       ├── ai_leaks.py       # STRONG (AUTO) + SOFT (MANUAL) AI assistant phrases
-│       ├── placeholders.py   # lorem ipsum, [brackets], example.com, emails, phones, names,
-│       │                     # companies, addresses, TODO, placeholder images, dead/void links
-│       ├── buzzwords.py      # 65 marketing words + density threshold
-│       ├── prose_tells.py    # "not only...but also", "dive in", em-dash overuse, etc.
-│       ├── duplicates.py     # cross-file duplicate prose blocks (conservative, prose-only)
-│       ├── accessibility.py  # missing/generic alt, empty headings, no title/meta/lang
-│       ├── codegen.py        # elision markers, stub bodies/comments, debugger, logs, restates
-│       └── markdown_tells.py # emoji headers, boilerplate sections, checkmark bullets,
-│                             # bold-lead lists, scaffolding lead-ins
-├── screens/
-│   ├── __init__.py
-│   ├── splash.py             # animated logo + typewriter effect
-│   ├── path.py               # path entry/confirmation
-│   ├── scan.py               # progress bar + shimmer
-│   ├── results.py            # tree (left) + detail panel (right)
-│   ├── summary.py            # per-category counts + score
-│   ├── modal.py              # prompt modal for PROMPT fixes
-│   └── base.py               # shared screen utilities
-└── widgets/
-    ├── __init__.py
-    ├── logo.py               # ASCII art logo
-    ├── animations.py         # shimmer banner, typewriter
-    ├── counters.py           # animated counter
-    ├── guard.py              # responsive size guard
-    └── stats.py              # score display
+│   ├── runner.py     # run rules → dedupe → collapse → containment → corroborate
+│   ├── scoring.py    # confidence table, noisy-OR file score, project score
+│   ├── context.py    # prose regions + string/comment masking (the FP killer)
+│   └── rules/        # ai_leaks, placeholders, buzzwords, prose_tells, duplicates,
+│                     #   accessibility, codegen, design_slop, markdown_tells,
+│                     #   merge_conflicts, secrets, security, imports   (13 modules)
+├── screens/          # splash → path → scan → results → summary
+└── widgets/          # animations, counters, logo, stats
 ```
 
-### How rules work
-
-Rules self-register via `@file_rule` (run once per file) / `@cross_rule` (run once over all files) decorators in `registry.py`. The `runner.py` imports the `rules` package to trigger registration.
-
-- `PatternRule` base class handles regex matching for most rules. Each rule declares a list of `Pattern` dataclasses with regex, severity, fixability, guard function, and file-kind restriction.
-- `BuzzwordRule` overrides `scan()` to check `prose_regions()` first — buzzwords in code identifiers are ignored.
-- `AccessibilityRule` scans HTML/JSX only; document-level checks (`<title>`, `<meta>`, `lang`) apply only to real HTML documents.
-- `DuplicateRule` is a cross-file rule that finds identical prose blocks across files.
-- `MarkdownTellRule` detects AI-doc signatures: emoji headers, boilerplate "Conclusion/Key Takeaways" sections, checkmark bullet runs, bold-lead listicles, and scaffolding lead-ins.
-- `CodeGenRule` catches AI-pasted code artifacts: elision markers, not-implemented stubs, fill-in-the-blank comments, leftover `debugger;`, throwaway `console.log`, and restate-the-code comments.
-
-Dedup: `runner._dedupe()` collapses findings with same `(file, start, end)` — keeps first. Self-annotation filter: lines containing `aislopfixer:` are never re-flagged. Low-value placeholders (company/name/address) are collapsed per file to one finding per distinct value.
-
-### Scanner behavior
-
-- Skips hidden dirs (`.git`, `.aislopfixer`), `node_modules`, `dist`, `build`, `.next`, `vendor`, `__pycache__`, `.turbo`, `.vercel`, `.astro`, etc.
-- Skips repo-meta files by stem: `README`, `CLAUDE`, `AGENTS`, `LICENSE`, `CONTRIBUTING`, `CHANGELOG`, etc.
-- Max scanned file size: 2MB (`MAX_BYTES`).
-- Supported extensions: `.html .htm .jsx .tsx .js .ts .mjs .cjs .vue .svelte .astro .md .mdx .css`.
-
-### Scoring
-
-Every finding gets a confidence score (0..1):
-1. **Rule override** — specific rules have pinned confidence (e.g., `ai_leak.strong` → 0.97, `codegen.restate_comment` → 0.30).
-2. **Category × severity** — fallback formula per category prior × severity weight.
-
-File score: noisy-OR of all findings in that file. Project score: self-weighted mean of file scores (sloppy files dominate).
+Rules self-register via `@file_rule` / `@cross_rule` decorators; most are declarative `Pattern` lists (regex + severity + fixability + string/comment masking flags + optional guard). Adding a detector is ~30 lines plus a test and a labeled bench case — `tests/test_bench.py` enforces 100% recall on the corpus and **zero** false positives on clean files.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest                            # 275 tests
+PYTHONPATH=src python -m bench.run  # calibration: recall + clean-FP metrics
+PYTHONPATH=src python scripts/shots.py  # regenerate the README screenshots
 ```
 
-- **Stack:** Python ≥ 3.11, [Textual](https://textual.textualize.io/) ≥ 0.80.
-- **Dev:** `pytest ≥ 8`, `pytest-asyncio ≥ 0.23` (`asyncio_mode = auto`).
-
-### npm package
-
-The npm package (`@mertsoylu/aislopfixer`) is a thin launcher that:
-1. Finds Python ≥ 3.11 on the host.
-2. Creates a private venv in `~/.aislopfixer/venv-{version}/` on first run.
-3. Pip-installs the bundled Python package (pulls in `textual`).
-4. Executes the TUI with the user's args.
-5. Cached thereafter — startup is instant.
-
-```bash
-npm pack                          # test locally
-npm publish                       # publish to npm
-```
+Stack: Python ≥ 3.11, [Textual](https://textual.textualize.io/) ≥ 0.80.
 
 ## License
 

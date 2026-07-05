@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from textual.app import App
 
 from .engine.models import Finding
@@ -31,11 +29,9 @@ class AISlopFixerApp(App):
         self.push_screen(SplashScreen())
 
     def start_after_splash(self) -> None:
-        if self.initial_path:
-            path = Path(self.initial_path).expanduser()
-            if path.is_dir():
-                self.begin_scan(str(path))
-                return
+        # Always confirm the target on the path screen, even when a PATH arg
+        # was passed on the command line — pre-filled, so a valid arg is just
+        # an Enter-press away, but the user always sees and can edit it.
         self.switch_screen(PathScreen(self.initial_path or ""))
 
     def begin_scan(self, path: str) -> None:

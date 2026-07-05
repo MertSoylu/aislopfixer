@@ -54,6 +54,11 @@ class SlopBadge(Static):
     def on_mount(self) -> None:
         self.animate("frac", self._score / 100, duration=0.9, easing="out_cubic")
 
+    def set_score(self, score: int) -> None:
+        """Re-target the badge — used to ease the score down as findings are fixed."""
+        self._score = max(0, min(100, score))
+        self.animate("frac", self._score / 100, duration=0.5, easing="out_cubic")
+
     def watch_frac(self) -> None:
         self.refresh()
 

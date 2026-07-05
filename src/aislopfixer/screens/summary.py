@@ -11,13 +11,24 @@ from textual.reactive import reactive
 from textual.widgets import Static
 
 from .base import AdaptiveScreen
-from ..engine.models import Category, Finding, Status
+from ..engine.models import Category, Finding, Severity, Status
 from ..engine.scoring import project_score_from_findings
-from ..theme import ACCENT, BAD, CATEGORY_COLORS, CATEGORY_ICON, DIM, OK
+from ..theme import (
+    ACCENT,
+    BAD,
+    CATEGORY_COLORS,
+    CATEGORY_ICON,
+    DIM,
+    FAINT,
+    OK,
+    SEVERITY_COLORS,
+    SEVERITY_ICON,
+    WARN,
+)
 from ..widgets import CountUp
 
 _BAR_WIDTH = 28
-_WARN = "#fbbf24"
+_WARN = WARN
 
 
 class CatBar(Static):
@@ -54,7 +65,7 @@ class CatBar(Static):
 
 class SummaryScreen(AdaptiveScreen):
     MIN_WIDTH = 72
-    MIN_HEIGHT = 20
+    MIN_HEIGHT = 21
 
     BINDINGS = [
         ("b", "back", "Back to findings"),
@@ -86,7 +97,9 @@ class SummaryScreen(AdaptiveScreen):
 
         with Vertical(id="summary-box"):
             yield Static("✦  SCAN SUMMARY", id="summary-title")
+            yield Static(self._target_line(), id="summary-target")
             yield Static(self._slop_line(self._slop), id="summary-slop")
+            yield Static(self._sev_line(), id="summary-sev")
             with Horizontal(id="summary-counters"):
                 yield CountUp("Found", ACCENT, id="s-found", classes="rc")
                 yield CountUp("Fixed", OK, id="s-fixed", classes="rc")
@@ -98,9 +111,38 @@ class SummaryScreen(AdaptiveScreen):
                     if per_found.get(cat):
                         yield CatBar(cat, per_found[cat], per_fixed.get(cat, 0), max_found)
             yield Static(self._status_line(remaining), id="summary-status")
+            yield Static(self._tip_line(remaining), id="summary-tip")
             yield Static(self._menu_line(), id="summary-menu")
 
         self._totals = (found, fixed, skipped, remaining)
+
+    def _target_line(self) -> Text:
+        t = Text(justify="center", no_wrap=True, overflow="ellipsis")
+        target = getattr(self.app, "target_path", None)
+        if target:
+            t.append(str(target), style=FAINT)
+        return t
+
+    def _sev_line(self) -> Text:
+        """A compact ``● n errors ▲ n warnings ■ n info`` breakdown row."""
+        per_sev = Counter(f.severity for f in self._findings)
+        t = Text(justify="center")
+        shown = False
+        for sev, label in (
+            (Severity.ERROR, "error"),
+            (Severity.WARNING, "warning"),
+            (Severity.INFO, "info"),
+        ):
+            n = per_sev.get(sev, 0)
+            if not n:
+                continue
+            if shown:
+                t.append("    ", style=DIM)
+            t.append(f"{SEVERITY_ICON[sev]} ", style=SEVERITY_COLORS[sev])
+            t.append(f"{n} ", style=f"bold {SEVERITY_COLORS[sev]}")
+            t.append(label + ("s" if n != 1 else ""), style=DIM)
+            shown = True
+        return t
 
     def _slop_line(self, slop: int) -> Text:
         color = BAD if slop >= 75 else _WARN if slop >= 45 else OK
@@ -121,6 +163,18 @@ class SummaryScreen(AdaptiveScreen):
             t.append("scan again any time.", style=DIM)
         return t
 
+    def _tip_line(self, remaining: int) -> Text:
+        """Where the report went; how to hand the leftovers to an AI assistant."""
+        t = Text(justify="center", no_wrap=True, overflow="ellipsis")
+        t.append("report saved to .aislopfixer/report.md", style=FAINT)
+        if remaining:
+            t.append("   ·   ", style=FAINT)
+            t.append("b", style=f"bold {ACCENT}")
+            t.append(" back, then ", style=DIM)
+            t.append("x", style=f"bold {ACCENT}")
+            t.append(" exports a fix brief for your AI assistant", style=DIM)
+        return t
+
     def _menu_line(self) -> Text:
         t = Text(justify="center")
 
@@ -138,6 +192,7 @@ class SummaryScreen(AdaptiveScreen):
 
     def on_mount(self) -> None:
         box = self.query_one("#summary-box")
+        box.border_title = "AISLOPFIXER"
         box.styles.opacity = 0.0
         box.styles.animate("opacity", 1.0, duration=0.5)
         found, fixed, skipped, remaining = self._totals

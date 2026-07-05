@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .context import file_kind
+from .context import code_masks, ext_of, file_kind, point_in
 from .models import Category, Finding, Fixability, Severity, SourceFile
 from .util import build_finding
 
@@ -34,6 +34,12 @@ class Pattern:
     # Context gate: return True to keep a match, False to reject it. Lets a
     # pattern distinguish real slop from legitimate code that looks similar.
     guard: Callable[[re.Match, SourceFile], bool] | None = None
+    # Code-aware masking (see context.code_masks). A match is judged by where it
+    # *starts*: ``// eval(`` and ``"eval("`` both start inside a comment/string
+    # and are dropped, while ``createHash('md5')`` starts in code and is kept.
+    exclude_strings: bool = False   # drop matches starting inside a string literal
+    exclude_comments: bool = False  # drop matches starting inside a comment
+    comments_only: bool = False     # keep only matches starting inside a comment
 
 
 class PatternRule:
@@ -45,11 +51,23 @@ class PatternRule:
     def scan(self, sf: SourceFile) -> list[Finding]:
         out: list[Finding] = []
         kind = file_kind(sf.rel_path)
-        for pat in self.patterns:
-            if pat.kinds is not None and kind not in pat.kinds:
-                continue
+        active = [p for p in self.patterns if p.kinds is None or kind in p.kinds]
+        needs_mask = any(
+            p.exclude_strings or p.exclude_comments or p.comments_only for p in active
+        )
+        strings, comments = (
+            code_masks(sf.text, ext_of(sf.rel_path)) if needs_mask else ([], [])
+        )
+        for pat in active:
             for m in pat.regex.finditer(sf.text):
                 if pat.guard is not None and not pat.guard(m, sf):
+                    continue
+                at = m.start()
+                if pat.exclude_strings and point_in(strings, at):
+                    continue
+                if pat.exclude_comments and point_in(comments, at):
+                    continue
+                if pat.comments_only and not point_in(comments, at):
                     continue
                 start, end = m.span(pat.group)
                 out.append(

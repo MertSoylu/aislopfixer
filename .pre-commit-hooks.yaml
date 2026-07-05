@@ -1,0 +1,14 @@
+# Use aislopfixer as a pre-commit hook:
+#
+#   repos:
+#     - repo: https://github.com/mertsoylu/aislopfixer
+#       rev: v0.2.0
+#       hooks:
+#         - id: aislopfixer
+- id: aislopfixer
+  name: aislopfixer (AI slop check)
+  description: Fail the commit when AI-generated slop is found in the project.
+  entry: aislopfixer . --check
+  language: python
+  pass_filenames: false
+  types_or: [html, javascript, jsx, ts, tsx, vue, svelte, markdown, css]

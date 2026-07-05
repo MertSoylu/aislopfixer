@@ -9,6 +9,7 @@ pip install -e .            # basic
 pip install -e ".[dev]"     # +pytest/pytest-asyncio
 aislopfixer ./sample        # CLI entry: aislopfixer.cli:main
 python -m aislopfixer ./sample
+aislopfixer . --check       # headless CI mode (--json/--sarif/--prompt/--fix/--fail-on/--min-confidence)
 ```
 
 ## Test
@@ -22,7 +23,11 @@ pytest test_rules.py -k "test_ai_leak"  # single test
 
 ```
 src/aislopfixer/
-├── cli.py             # argparse entrypoint
+├── cli.py             # argparse entrypoint (TUI default; --check/--json/--sarif/--prompt → headless)
+├── headless.py        # CI mode: text/JSON/SARIF/fix-brief output, exit codes, batch auto-fix
+├── pipeline.py        # scan_project() — the one pipeline TUI + headless share
+├── prompter.py        # findings → fix brief for an AI coding assistant (--prompt, TUI `x`)
+├── config.py          # .aislopfixer.toml: disable prefixes, ignore globs, thresholds
 ├── __main__.py        # python -m support
 ├── app.py             # Textual App, screen orchestration (splash→path→scan→results→summary)
 ├── scanner.py         # walks dir, filters by ext/ignore/meta, yields SourceFile
@@ -36,7 +41,14 @@ src/aislopfixer/
 │   ├── registry.py    # @file_rule / @cross_rule decorators — rules self-register at import
 │   ├── pattern_rule.py# base class for regex rules (Pattern + PatternRule)
 │   ├── context.py     # file_kind(), prose_regions() — only flag buzzwords in human-visible text
-│   └── rules/         # ai_leaks, placeholders, buzzwords, duplicates, accessibility
+│   └── rules/         # ai_leaks, placeholders, buzzwords, duplicates, accessibility,
+│                      #   codegen, design_slop, imports, markdown_tells, prose_tells,
+│                      #   merge_conflicts, secrets, security  (13 modules;
+│                      #   SECURITY = XSS/SQLi/secrets;
+│                      #   design_slop = purple→pink gradient hero, fake social-proof
+│                      #   stats, emoji-decorated UI copy (Category.DESIGN);
+│                      #   imports = hallucinated deps + phantom exports + unused;
+│                      #   duplicates = prose AND near-identical code blocks; see CLAUDE.md)
 ├── screens/           # SplashScreen, PathScreen, ScanScreen, ResultsScreen, SummaryScreen, modal
 └── widgets/           # animations, counters, logo
 ```
@@ -62,7 +74,7 @@ src/aislopfixer/
 1. `SplashScreen` → if `initial_path` is valid dir, skip to scan; else `PathScreen`.
 2. `PathScreen` → user enters/confirms path.
 3. `ScanScreen` → runs `scan_all()` (file rules + cross rules), transitions to results.
-4. `ResultsScreen` → tree (left) + detail panel (right). Keybindings: `f` fix, `s` skip, `a` annotate, `p` fix all auto, `q` summary/modal.
+4. `ResultsScreen` → tree (left) + detail panel (right). Keybindings: `f` fix, `s` skip, `a` annotate, `p` fix all auto, `x` export (AI fix brief / JSON / SARIF via `ExportModal`), `c` confidence floor, `q` summary/modal.
 5. `SummaryScreen` → per-category counts.
 
 ## Release

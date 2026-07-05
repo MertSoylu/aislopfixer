@@ -1,0 +1,112 @@
+"""Headless CLI mode: exit codes, JSON output, --fix, memory suppression."""
+
+import json
+
+from aislopfixer.cli import main
+
+
+def _slop_project(tmp_path):
+    (tmp_path / "index.html").write_text(
+        "<p>As an AI language model, I cannot browse the internet.</p>\n"
+        "<p>Lorem ipsum dolor sit amet.</p>\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "app.js").write_text(
+        "try { run(); } catch (e) {}\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+def _clean_project(tmp_path):
+    (tmp_path / "index.html").write_text(
+        "<html lang='en'><head><title>Bakery</title></head>"
+        "<body><p>We open at 8am on weekdays.</p></body></html>\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_check_exits_1_on_slop(tmp_path, capsys):
+    code = main([str(_slop_project(tmp_path)), "--check"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "ai_leak.strong" in out
+    assert "slop score" in out
+
+
+def test_check_exits_0_on_clean(tmp_path, capsys):
+    code = main([str(_clean_project(tmp_path)), "--check"])
+    assert code == 0
+    assert "no slop found" in capsys.readouterr().out
+
+
+def test_fail_on_never_always_exits_0(tmp_path):
+    assert main([str(_slop_project(tmp_path)), "--check", "--fail-on", "never"]) == 0
+
+
+def test_fail_on_error_ignores_warnings(tmp_path):
+    # lone empty catch = WARNING; with --fail-on error it must pass
+    p = tmp_path
+    (p / "app.js").write_text("try { run(); } catch (e) {}\n", encoding="utf-8")
+    assert main([str(p), "--check", "--fail-on", "error"]) == 0
+    assert main([str(p), "--check", "--fail-on", "warning"]) == 1
+
+
+def test_json_output_is_valid(tmp_path, capsys):
+    main([str(_slop_project(tmp_path)), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["tool"] == "aislopfixer"
+    assert data["total"] == len(data["findings"]) > 0
+    f = data["findings"][0]
+    assert {"rule_id", "severity", "file", "line", "message", "confidence"} <= set(f)
+
+
+def test_min_confidence_filters(tmp_path, capsys):
+    main([str(_slop_project(tmp_path)), "--json", "--min-confidence", "0.99"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["total"] == 0
+
+
+def test_fix_applies_auto_and_suppresses_next_run(tmp_path, capsys):
+    p = _slop_project(tmp_path)
+    main([str(p), "--fix"])
+    out1 = capsys.readouterr().out
+    assert "fixed automatically" in out1
+    html = (p / "index.html").read_text(encoding="utf-8")
+    assert "As an AI language model" not in html
+    assert "Lorem ipsum" not in html
+    # backup exists
+    assert (p / "index.html.aislopfixer.bak").exists()
+    # second run: fixed findings stay suppressed via the ledger
+    main([str(p), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert not any(f["rule_id"].startswith("ai_leak") for f in data["findings"])
+
+
+def test_sarif_output_is_valid(tmp_path, capsys):
+    code = main([str(_slop_project(tmp_path)), "--sarif"])
+    doc = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert doc["version"] == "2.1.0"
+    run = doc["runs"][0]
+    assert run["tool"]["driver"]["name"] == "aislopfixer"
+    assert run["results"], "expected findings in the SARIF run"
+    res = run["results"][0]
+    assert res["level"] in {"note", "warning", "error"}
+    loc = res["locations"][0]["physicalLocation"]
+    assert loc["artifactLocation"]["uri"]
+    assert loc["region"]["startLine"] >= 1
+    rule_ids = {r["id"] for r in run["tool"]["driver"]["rules"]}
+    assert res["ruleId"] in rule_ids
+
+
+def test_bad_path_exits_2(tmp_path):
+    assert main([str(tmp_path / "missing"), "--check"]) == 2
+
+
+def test_version_flag(capsys):
+    try:
+        main(["--version"])
+    except SystemExit as e:
+        assert e.code == 0
+    assert "aislopfixer" in capsys.readouterr().out

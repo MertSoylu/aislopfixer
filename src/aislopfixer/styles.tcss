@@ -1,9 +1,62 @@
-/* ===== aislopfixer — global theme ===== */
+/* ===== aislopfixer — global theme =====
+   Palette lives in theme.py; this file mirrors those tokens:
+   bg #0b0e14 · panel #11151f · panel-alt #0d111a · border #232a38
+   text #cdd6f4 · dim #7b8496 · faint #5b647a · accent #36e2e6           */
 
 Screen {
     background: #0b0e14;
     color: #cdd6f4;
     layers: base guard;
+    scrollbar-size-vertical: 1;
+    scrollbar-size-horizontal: 1;
+    scrollbar-background: #0b0e14;
+    scrollbar-background-hover: #0b0e14;
+    scrollbar-background-active: #0b0e14;
+    scrollbar-color: #232a38;
+    scrollbar-color-hover: #36e2e6;
+    scrollbar-color-active: #36e2e6;
+}
+
+/* ---------- Footer: teal keys on the sunken surface ---------- */
+Footer {
+    background: #0d111a;
+    color: #7b8496;
+}
+FooterKey {
+    background: #0d111a;
+}
+FooterKey:hover {
+    background: #1b2433;
+}
+FooterKey > .footer-key--key {
+    color: #36e2e6;
+    background: #0d111a;
+    text-style: bold;
+}
+FooterKey > .footer-key--description {
+    color: #7b8496;
+    background: #0d111a;
+}
+
+/* ---------- Inputs: calm idle border, accent on focus ---------- */
+Input {
+    background: #0d111a;
+    border: tall #232a38;
+}
+Input:focus {
+    border: tall #36e2e6;
+}
+
+/* ---------- Toasts ---------- */
+Toast {
+    background: #11151f;
+    border-left: outer #36e2e6;
+}
+Toast.-warning {
+    border-left: outer #fbbf24;
+}
+Toast.-error {
+    border-left: outer #f87171;
 }
 
 /* ---------- Responsive guard (too-small overlay) ---------- */
@@ -24,7 +77,7 @@ SplashScreen {
     align: center middle;
 }
 #splash-box {
-    width: 80;
+    width: 84;
     height: auto;
     align: center middle;
     padding: 2 4;
@@ -34,6 +87,12 @@ Logo {
 }
 Typewriter {
     width: 100%;
+    margin-top: 1;
+}
+#splash-meta {
+    width: 100%;
+    content-align: center middle;
+    color: #5b647a;
     margin-top: 1;
 }
 #splash-hint {
@@ -56,10 +115,12 @@ PathScreen {
     align: center middle;
 }
 #path-box {
-    width: 64;
+    width: 68;
     height: auto;
     padding: 2 4;
     border: round #36e2e6;
+    border-title-color: #36e2e6;
+    border-title-align: left;
     background: #11151f;
 }
 #path-title {
@@ -86,10 +147,12 @@ ScanScreen {
     align: center middle;
 }
 #scan-box {
-    width: 80;
+    width: 84;
     height: auto;
     padding: 1 4;
     border: round #8b5cf6;
+    border-title-color: #a78bfa;
+    border-title-align: left;
     background: #11151f;
 }
 #scan-title {
@@ -111,6 +174,16 @@ ScanScreen {
     width: 100%;
     margin-top: 1;
 }
+#scan-prog Bar > .bar--bar {
+    color: #36e2e6;
+    background: #232a38;
+}
+#scan-prog Bar > .bar--complete {
+    color: #4ade80;
+}
+#scan-prog PercentageStatus {
+    color: #7b8496;
+}
 #scan-count {
     width: 100%;
     height: 1;
@@ -126,6 +199,8 @@ ScanScreen {
 #scan-counters {
     height: 5;
     margin-top: 1;
+    border-top: solid #232a38;
+    padding-top: 1;
 }
 .cat-counter {
     width: 1fr;
@@ -155,6 +230,11 @@ ScanScreen {
     padding: 0 2;
     margin-top: 1;
 }
+#results-hint {
+    height: 1;
+    width: 100%;
+    padding: 0 2;
+}
 .rc {
     width: 1fr;
 }
@@ -166,17 +246,45 @@ ScanScreen {
 #tree {
     width: 38%;
     height: 100%;
-    border: round #2a2f3a;
+    border: round #232a38;
+    border-title-color: #7b8496;
+    border-title-align: left;
+    border-subtitle-color: #5b647a;
+    border-subtitle-align: right;
+    background: #0d111a;
     padding: 0 1;
     margin-right: 1;
 }
 #tree:focus {
     border: round #36e2e6;
+    border-title-color: #36e2e6;
+}
+/* Selected row reads clearly even when the tree is unfocused. */
+#tree > .tree--cursor {
+    background: #1b2433;
+    color: #cdd6f4;
+    text-style: bold;
+}
+#tree:focus > .tree--cursor {
+    background: #143142;
+    color: #ffffff;
+}
+#tree > .tree--guides {
+    color: #232a38;
+}
+#tree > .tree--guides-hover,
+#tree > .tree--guides-selected {
+    color: #36e2e6;
 }
 #detail {
     width: 1fr;
     height: 100%;
-    border: round #2a2f3a;
+    border: round #232a38;
+    border-title-color: #7b8496;
+    border-title-align: left;
+    border-subtitle-color: #5b647a;
+    border-subtitle-align: right;
+    background: #0d111a;
     padding: 1 2;
     overflow-y: auto;
 }
@@ -190,10 +298,12 @@ SummaryScreen {
     align: center middle;
 }
 #summary-box {
-    width: 72;
+    width: 76;
     height: auto;
     padding: 1 4;
     border: round #36e2e6;
+    border-title-color: #36e2e6;
+    border-title-align: left;
     background: #11151f;
 }
 #summary-title {
@@ -202,13 +312,26 @@ SummaryScreen {
     text-style: bold;
     color: #36e2e6;
 }
+#summary-target {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+}
 #summary-slop {
+    width: 100%;
+    content-align: center middle;
+    margin-top: 1;
+}
+#summary-sev {
     width: 100%;
     content-align: center middle;
 }
 #summary-counters {
     height: 3;
     margin: 1 0;
+    border-top: solid #232a38;
+    border-bottom: solid #232a38;
+    padding: 1 0;
 }
 #summary-cat-title {
     text-style: bold;
@@ -223,14 +346,19 @@ SummaryScreen {
     content-align: center middle;
     margin-top: 1;
 }
+#summary-tip {
+    width: 100%;
+    height: 1;
+    content-align: center middle;
+}
 #summary-menu {
     width: 100%;
     content-align: center middle;
     margin-top: 1;
 }
 
-/* ---------- Prompt modal ---------- */
-PromptModal {
+/* ---------- Modals ---------- */
+PromptModal, ConfirmModal, HelpModal, ExportModal {
     align: center middle;
     background: #000000 60%;
 }
@@ -254,4 +382,7 @@ PromptModal {
 }
 #modal-hint {
     color: #5b647a;
+}
+#help-body {
+    margin: 1 0;
 }

@@ -119,12 +119,9 @@ def test_img_no_alt_is_prompt_fixable():
     assert g and g[0].fixability is Fixability.PROMPT
 
 
-def test_html_missing_lang_flagged():
-    f = run_file_rules(sf("<html>\n<head><title>Hi there</title></head>\n</html>\n"))
-    g = [x for x in f if x.rule_id == "a11y.no_lang"]
-    assert g and g[0].fixability is Fixability.PROMPT
-
-
-def test_html_with_lang_not_flagged():
-    f = run_file_rules(sf('<html lang="en">\n<head><title>Hi</title></head>\n</html>\n'))
-    assert not any(x.rule_id == "a11y.no_lang" for x in f)
+def test_doc_level_a11y_lint_removed():
+    # Missing <title>/lang/meta description are generic lint, not AI slop —
+    # modern scaffolds emit them correctly, so the tool must stay silent.
+    f = run_file_rules(sf("<html>\n<head></head>\n<body><h1></h1></body>\n</html>\n"))
+    assert not any(x.rule_id.startswith("a11y.no_") for x in f)
+    assert not any(x.rule_id == "a11y.empty_heading" for x in f)

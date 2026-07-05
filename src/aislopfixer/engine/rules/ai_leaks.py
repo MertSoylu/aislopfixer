@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from ..context import file_kind, prose_regions
+from ..context import ext_of, file_kind, prose_regions
 from ..models import Category, Fixability, Severity, Finding
 from ..pattern_rule import Pattern, PatternRule
 from ..registry import file_rule
@@ -54,7 +54,9 @@ class AILeakRule(PatternRule):
     category = Category.AI_LEAK
 
     def scan(self, sf: SourceFile) -> list[Finding]:
-        regions = prose_regions(sf.text, file_kind(sf.rel_path))
+        # Code comments are human prose too — an "as an AI language model" tell
+        # leaks into a JSDoc block as readily as into page copy (ext enables it).
+        regions = prose_regions(sf.text, file_kind(sf.rel_path), ext_of(sf.rel_path))
         # overlap check instead of strict containment — expand_line pushes
         # start/end to full line boundaries which may include HTML tags
         # on the same line. As long as the line overlaps prose, it's valid.

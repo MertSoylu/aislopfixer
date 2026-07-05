@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from ..context import file_kind, in_any, prose_regions
+from ..context import ext_of, file_kind, in_any, prose_regions
 from ..models import Category, Fixability, Severity, SourceFile, Finding
 from ..pattern_rule import Pattern, PatternRule
 from ..registry import file_rule
@@ -61,6 +61,20 @@ _WORDS = [
     "navigating the",
     "comprehensive suite",
     "unparalleled",
+    # tells still common in current-generation model output
+    "blazingly fast",
+    "hassle-free",
+    "effortlessly",
+    "unlock the full potential",
+    "harness the power",
+    "streamline your",
+    "game changer",
+    "future-proof",
+    "battle-tested",
+    # landing-page hero clichés
+    "say goodbye to",
+    "like never before",
+    "at your fingertips",
 ]
 
 _DENSITY_THRESHOLD = 5
@@ -83,8 +97,9 @@ class BuzzwordRule(PatternRule):
 
     def scan(self, sf: SourceFile) -> list[Finding]:
         # Buzzwords only count as slop in human-visible prose. In pure code
-        # ('leverage', 'synergy' as identifiers) or CSS they are not slop.
-        regions = prose_regions(sf.text, file_kind(sf.rel_path))
+        # ('leverage', 'synergy' as identifiers) they are not slop — but a code
+        # *comment* is human prose, so mine those too (ext enables comment spans).
+        regions = prose_regions(sf.text, file_kind(sf.rel_path), ext_of(sf.rel_path))
         findings = [f for f in super().scan(sf) if in_any(regions, f.start, f.end)]
         if len(findings) >= _DENSITY_THRESHOLD:
             findings.append(

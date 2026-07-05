@@ -5,8 +5,13 @@ from . import (  # noqa: F401
     ai_leaks,
     buzzwords,
     codegen,
+    design_slop,
     duplicates,
+    imports,
     markdown_tells,
+    merge_conflicts,
     placeholders,
     prose_tells,
+    secrets,
+    security,
 )

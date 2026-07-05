@@ -31,12 +31,13 @@ class PathScreen(AdaptiveScreen):
         with Vertical(id="path-box"):
             yield Static("◈  SELECT TARGET", id="path-title")
             yield Static("Path to the web project folder to scan", id="path-sub")
-            yield Input(value=self._initial, placeholder="e.g.  ./my-site", id="path-input")
+            yield Input(value=self._initial, placeholder="e.g.  ./my-site  or  ~/projects/site", id="path-input")
             yield Static("", id="path-error")
-            yield Static("Enter to scan  ·  Esc to quit", id="path-hint")
+            yield Static("Enter to scan  ·  Esc to quit  ·  relative paths OK", id="path-hint")
 
     def on_mount(self) -> None:
         box = self.query_one("#path-box")
+        box.border_title = "AISLOPFIXER"
         box.styles.opacity = 0.0
         box.styles.animate("opacity", 1.0, duration=0.4)
         self.query_one(Input).focus()

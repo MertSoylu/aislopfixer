@@ -100,6 +100,24 @@ class PlaceholderRule(PatternRule):
             prompt_label="Real URL",
         ),
         Pattern(
+            id="placeholder.fake_api",
+            regex=re.compile(
+                r"https?://(?:www\.)?"
+                r"(?:your[-_]?(?:api|app|site|domain|website|company|backend|server)|"
+                r"my[-_]?(?:api|app|site|domain|website|backend)|"
+                r"api\.(?:example|yourdomain|yoursite|mysite)|"
+                r"some[-_]?api|placeholder[-_]?api)"
+                r"\.[a-z]{2,6}\b[^\s\"'<>)]*",
+                _I,
+            ),
+            severity=Severity.WARNING,
+            fixability=Fixability.PROMPT,
+            message="Hallucinated/placeholder API endpoint URL",
+            suggested_fix="Point this at the real endpoint",
+            replace_template="{value}",
+            prompt_label="Real URL",
+        ),
+        Pattern(
             id="placeholder.email",
             regex=re.compile(
                 r"\b[\w.+-]+@(?:example\.(?:com|org|net)|yourdomain\.com|"

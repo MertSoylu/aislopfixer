@@ -7,21 +7,25 @@ import colorsys
 from .engine.models import Category, Severity
 
 CATEGORY_COLORS: dict[Category, str] = {
+    Category.SECURITY: "#ff4d4d",
     Category.AI_LEAK: "#ff5fd2",
     Category.PLACEHOLDER: "#fbbf24",
     Category.BUZZWORD: "#a78bfa",
     Category.DUPLICATE: "#36e2e6",
     Category.ACCESSIBILITY: "#4ade80",
     Category.CODE_SLOP: "#f59e0b",
+    Category.DESIGN: "#f472b6",
 }
 
 CATEGORY_ICON: dict[Category, str] = {
+    Category.SECURITY: "⛒",
     Category.AI_LEAK: "◈",
     Category.PLACEHOLDER: "▢",
     Category.BUZZWORD: "✦",
     Category.DUPLICATE: "⧉",
     Category.ACCESSIBILITY: "⊙",
     Category.CODE_SLOP: "⌁",
+    Category.DESIGN: "❖",
 }
 
 SEVERITY_COLORS: dict[Severity, str] = {
@@ -39,9 +43,21 @@ SEVERITY_ICON: dict[Severity, str] = {
 FIX_ICON: dict[str, str] = {"auto": "⚡", "prompt": "✎", "manual": "⚑"}
 FIX_COLOR: dict[str, str] = {"auto": "#4ade80", "prompt": "#7dd3fc", "manual": "#7b8496"}
 
-DIM = "#7b8496"
-ACCENT = "#36e2e6"
+# Core design tokens — every screen/widget should pull colors from here so the
+# palette stays coherent (screens must not re-declare their own hex constants).
+BG = "#0b0e14"        # app background
+PANEL = "#11151f"     # raised card/panel surface
+PANEL_ALT = "#0d111a" # sunken surface (inputs, footer, tree/detail panes)
+BORDER = "#232a38"    # idle border / hairline
+BORDER_MID = "#2a2f3a"
+TEXT = "#cdd6f4"      # primary text
+DIM = "#7b8496"       # secondary text
+FAINT = "#5b647a"     # tertiary text / hints
+SOURCE = "#8a94a6"    # source-code excerpt text
+ACCENT = "#36e2e6"    # brand teal
+ACCENT_ALT = "#a78bfa" # violet secondary accent
 OK = "#4ade80"
+WARN = "#fbbf24"
 BAD = "#f87171"
 
 

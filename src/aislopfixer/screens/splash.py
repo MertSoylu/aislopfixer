@@ -27,6 +27,7 @@ class SplashScreen(AdaptiveScreen):
         with Vertical(id="splash-box"):
             yield Logo()
             yield Typewriter("Detect & fix AI-generated slop in your web project")
+            yield Static("offline  ·  rule-based  ·  no API keys", id="splash-meta")
             yield Static("PRESS  ENTER  TO  BEGIN", id="splash-hint")
             yield Static(f"v{__version__}", id="splash-version")
 

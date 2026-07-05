@@ -6,7 +6,11 @@ from . import rules as _rules  # noqa: F401  (import registers all rules)
 from .context import on_annotation_line
 from .models import Finding, SourceFile
 from .registry import CROSS_RULES, FILE_RULES
-from .scoring import score_finding
+from .scoring import corroborate, score_finding
+
+# Above this many findings in one file, skip the O(n²) containment pass — its
+# noise-reduction is not worth the cost on a pathological file.
+_CONTAINMENT_CAP = 400
 
 
 def _backfill_confidence(findings: list[Finding]) -> list[Finding]:
@@ -16,21 +20,55 @@ def _backfill_confidence(findings: list[Finding]) -> list[Finding]:
     return findings
 
 
-def _dedupe(findings: list[Finding]) -> list[Finding]:
-    """Drop findings that target an identical non-empty span (keep first).
+def _rank(f: Finding) -> tuple[float, int]:
+    return (f.confidence, f.severity.rank)
 
-    Zero-length spans (doc-level / summary findings) are never deduped.
+
+def _dedupe(findings: list[Finding]) -> list[Finding]:
+    """Collapse findings on an identical non-empty span, keeping the strongest.
+
+    When two rules flag the exact same span, the higher-confidence (then
+    higher-severity) finding wins instead of "whichever ran first". Zero-length
+    spans (doc-level / summary findings) are never deduped.
     """
-    seen: set[tuple[str, int, int]] = set()
+    at: dict[tuple[str, int, int], int] = {}
     out: list[Finding] = []
     for f in findings:
         if f.start < f.end:
             key = (f.file, f.start, f.end)
-            if key in seen:
+            if key in at:
+                i = at[key]
+                if _rank(f) > _rank(out[i]):
+                    out[i] = f
                 continue
-            seen.add(key)
+            at[key] = len(out)
         out.append(f)
     return out
+
+
+def _drop_contained(findings: list[Finding]) -> list[Finding]:
+    """Drop a finding strictly contained within a larger *same-category* one.
+
+    A nested match of the same concern (e.g. an inner span inside the line span
+    another rule of the same family already flagged) adds no information. Spans
+    of different categories are kept — they are distinct concerns on one line.
+    """
+    spans = [
+        (f.start, f.end, f.category, i)
+        for i, f in enumerate(findings)
+        if f.start < f.end
+    ]
+    if len(spans) > _CONTAINMENT_CAP:
+        return findings
+    drop: set[int] = set()
+    for as_, ae, ac, ai in spans:
+        for bs, be, bc, bi in spans:
+            if ai == bi or bc is not ac:
+                continue
+            if bs <= as_ and ae <= be and (bs, be) != (as_, ae):
+                drop.add(ai)
+                break
+    return [f for i, f in enumerate(findings) if i not in drop]
 
 
 # Rules whose repeats inside one file add no information: the same brand, person
@@ -65,7 +103,9 @@ def run_file_rules(sf: SourceFile) -> list[Finding]:
     # Drop findings that live on our own annotation comments — never re-flag
     # what a previous fix session wrote into the file.
     out = [f for f in out if not on_annotation_line(sf.text, f.start)]
-    return _backfill_confidence(_collapse_repeats(_dedupe(out)))
+    out = _backfill_confidence(out)        # confidence first: dedupe keeps the strongest
+    out = _drop_contained(_collapse_repeats(_dedupe(out)))
+    return corroborate(out)                # boost when AI tells co-occur in this file
 
 
 def run_cross_rules(files: list[SourceFile]) -> list[Finding]:

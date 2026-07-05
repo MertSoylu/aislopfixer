@@ -17,12 +17,14 @@ class Severity(Enum):
 
 
 class Category(Enum):
+    SECURITY = "Security"
     AI_LEAK = "AI Leak"
     PLACEHOLDER = "Placeholder"
     BUZZWORD = "Buzzword"
     DUPLICATE = "Duplicate"
     ACCESSIBILITY = "Accessibility"
     CODE_SLOP = "Code Slop"
+    DESIGN = "Design"
 
 
 class Fixability(Enum):

@@ -1,0 +1,63 @@
+name: "aislopfixer"
+description: >-
+  Fail CI when AI-generated slop lands in your web project — leaked chat
+  phrases, hallucinated imports, placeholder secrets, security sinks and the
+  stock AI landing-page aesthetic. Offline, rule-based, no API keys.
+author: "Mert Soylu"
+branding:
+  icon: "alert-triangle"
+  color: "purple"
+
+inputs:
+  path:
+    description: "Folder to scan, relative to the workspace."
+    required: false
+    default: "."
+  fail-on:
+    description: >-
+      Minimum severity that fails the job: info, warning, error or never.
+      Empty uses the project's .aislopfixer.toml (default: warning).
+    required: false
+    default: ""
+  min-confidence:
+    description: >-
+      Only report findings at or above this confidence (0..1). Empty uses the
+      project's .aislopfixer.toml (default: 0).
+    required: false
+    default: ""
+  sarif-file:
+    description: >-
+      Also write a SARIF 2.1.0 report to this path. Pair with
+      github/codeql-action/upload-sarif to annotate PRs via code scanning.
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install aislopfixer
+      shell: bash
+      run: python3 -m pip install --quiet "${GITHUB_ACTION_PATH}"
+
+    - name: Scan for AI slop
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_MIN_CONFIDENCE: ${{ inputs.min-confidence }}
+        INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
+      run: |
+        common=()
+        if [ -n "$INPUT_MIN_CONFIDENCE" ]; then
+          common+=(--min-confidence "$INPUT_MIN_CONFIDENCE")
+        fi
+        if [ -n "$INPUT_SARIF_FILE" ]; then
+          mkdir -p "$(dirname "$INPUT_SARIF_FILE")"
+          python3 -m aislopfixer "$INPUT_PATH" --sarif --fail-on never \
+            "${common[@]}" > "$INPUT_SARIF_FILE"
+        fi
+        gate=("${common[@]}")
+        if [ -n "$INPUT_FAIL_ON" ]; then
+          gate+=(--fail-on "$INPUT_FAIL_ON")
+        fi
+        python3 -m aislopfixer "$INPUT_PATH" --check "${gate[@]}"

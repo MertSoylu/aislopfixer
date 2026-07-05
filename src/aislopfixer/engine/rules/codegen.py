@@ -27,20 +27,13 @@ from __future__ import annotations
 
 import re
 
-from ..models import Category, Fixability, Severity, SourceFile
+from ..context import file_kind
+from ..models import Category, Finding, Fixability, Severity, SourceFile
 from ..pattern_rule import Pattern, PatternRule
 from ..registry import file_rule
+from ..util import build_finding
 
 _I = re.IGNORECASE
-
-# Keep a match only if it sits OUTSIDE a template literal: an even number of
-# unescaped backticks precede it. Defends against `// ...` shown inside a `...`.
-_BACKTICK = re.compile(r"(?<!\\)`")
-
-
-def _outside_template(m: re.Match, sf: SourceFile) -> bool:
-    return len(_BACKTICK.findall(sf.text[: m.start()])) % 2 == 0
-
 
 # Comment openers present in real web files (no ``#`` — that is a Markdown head).
 _OPEN = r"(?://+|/\*|\*|<!--)"
@@ -90,12 +83,37 @@ _STUB_COMMENT = re.compile(
     r")"
 )
 
+# A bare Markdown code fence on its own line is never valid JS/TS/CSS/HTML — it
+# is the residue of pasting a model's ```lang … ``` block straight into a file.
+_FENCE = re.compile(r"(?m)^[ \t]*`{3,}[A-Za-z0-9+#.-]*[ \t]*$")
+
 _DEBUGGER = re.compile(r"(?m)^[ \t]*debugger\s*;?\s*$")
 
 _DEBUG_LOG = re.compile(
     r"(?im)^[ \t]*console\.(?:log|debug|info)\(\s*"
     r"(?:(['\"`])\s*(?:here|test(?:ing)?|hello(?:\s+world)?|debug|asdf+|qwerty|"
     r"foo|bar|baz|aa+|xxx+|=+|-+|\*+|\?+)\s*\1|\d+)?\s*\)\s*;?\s*$"
+)
+
+# Empty catch block: whitespace and comments only. The try/catch-everything
+# habit of generated code, with the error silently swallowed — failures vanish.
+_EMPTY_CATCH = re.compile(
+    r"\bcatch\s*(?:\([^)]*\))?\s*\{(?:\s|//[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*\}"
+    r"|\.catch\s*\(\s*(?:\([^)]*\)|[\w$]+)\s*=>\s*\{\s*\}\s*\)"
+    r"|\.catch\s*\(\s*function\s*\([^)]*\)\s*\{\s*\}\s*\)"
+)
+
+# Same disease, thin disguise: the catch body only logs, or only returns a
+# literal default — the failure is still invisible to the caller/user.
+_LOG_ONLY_CATCH = re.compile(
+    r"\bcatch\s*\(\s*[\w$]+\s*\)\s*\{\s*console\.(?:log|warn|error|debug)\s*\([^()]*\)\s*;?\s*\}"
+    r"|\.catch\s*\(\s*console\.(?:log|warn|error|debug)\s*\)"
+    r"|\.catch\s*\(\s*(?:\(\s*[\w$]*\s*\)|[\w$]+)\s*=>\s*console\.(?:log|warn|error|debug)\s*\([^()]*\)\s*\)"
+)
+_CATCH_RETURN_DEFAULT = re.compile(
+    r"\bcatch\s*(?:\([^)]*\))?\s*\{\s*"
+    r"return(?:\s+(?:null|undefined|false|true|0|-1|\[\s*\]|\{\s*\}|''|\"\"|``))?\s*;?\s*\}"
+    r"|\.catch\s*\(\s*(?:\(\s*[\w$]*\s*\)|[\w$]+)\s*=>\s*(?:null|undefined|false|\[\s*\]|\(\s*\{\s*\}\s*\))\s*\)"
 )
 
 _RESTATE = re.compile(
@@ -115,9 +133,62 @@ _RESTATE = re.compile(
 )
 
 
+# ------------------------------------------------------------ comment density
+# Line-by-line ``//`` narration is the strongest aggregate tell of generated
+# code. Block comments (JSDoc) are documentation and never counted; tool
+# directives and ruler lines are excluded.
+_COMMENT_ONLY_LINE = re.compile(r"^\s*//")
+_COMMENT_DIRECTIVE = re.compile(
+    r"^\s*//\s*(?:eslint|@ts-|ts-(?:ignore|expect)|prettier|biome|tslint|"
+    r"@vite|@jsx|@__PURE__|-{3,}|={3,}|#|/)"
+)
+_DENSITY_MIN_LINES = 30      # ignore small files — ratios are meaningless there
+_DENSITY_MIN_COMMENTS = 12
+_DENSITY_RATIO = 0.35
+
+
 @file_rule
 class CodeGenRule(PatternRule):
     category = Category.CODE_SLOP
+
+    def scan(self, sf: SourceFile) -> list[Finding]:
+        out = super().scan(sf)
+        if file_kind(sf.rel_path) in ("code", "jsx"):
+            density = self._comment_density(sf)
+            if density is not None:
+                out.append(density)
+        return out
+
+    def _comment_density(self, sf: SourceFile) -> Finding | None:
+        nonblank = 0
+        comments = 0
+        for line in sf.text.splitlines():
+            if not line.strip():
+                continue
+            nonblank += 1
+            if _COMMENT_ONLY_LINE.match(line) and not _COMMENT_DIRECTIVE.match(line):
+                comments += 1
+        if (
+            nonblank < _DENSITY_MIN_LINES
+            or comments < _DENSITY_MIN_COMMENTS
+            or comments / nonblank < _DENSITY_RATIO
+        ):
+            return None
+        return build_finding(
+            sf,
+            rule_id="codegen.comment_density",
+            category=self.category,
+            severity=Severity.INFO,
+            message=(
+                f"Comment-heavy file ({comments} of {nonblank} lines are "
+                "// comments) — reads as AI line-by-line narration"
+            ),
+            start=0,
+            end=0,
+            fixability=Fixability.MANUAL,
+            suggested_fix="Keep comments that explain *why*; delete the narration",
+        )
+
     patterns = [
         Pattern(
             id="codegen.elision",
@@ -126,7 +197,7 @@ class CodeGenRule(PatternRule):
             fixability=Fixability.MANUAL,
             message="Elision marker — real code was dropped from this paste",
             suggested_fix="Restore the omitted code; this file is incomplete",
-            guard=_outside_template,
+            exclude_strings=True,
         ),
         Pattern(
             id="codegen.stub_body",
@@ -135,7 +206,7 @@ class CodeGenRule(PatternRule):
             fixability=Fixability.MANUAL,
             message="Not-implemented stub — function body was never written",
             suggested_fix="Implement the function body",
-            guard=_outside_template,
+            exclude_strings=True,
         ),
         Pattern(
             id="codegen.stub_comment",
@@ -144,7 +215,7 @@ class CodeGenRule(PatternRule):
             fixability=Fixability.MANUAL,
             message="Fill-in-the-blank stub comment standing in for real logic",
             suggested_fix="Replace with the actual implementation",
-            guard=_outside_template,
+            exclude_strings=True,
         ),
         Pattern(
             id="codegen.debugger",
@@ -155,7 +226,7 @@ class CodeGenRule(PatternRule):
             suggested_fix="Delete this line",
             replacement="",
             expand_line=True,
-            guard=_outside_template,
+            exclude_strings=True,
         ),
         Pattern(
             id="codegen.debug_log",
@@ -166,7 +237,40 @@ class CodeGenRule(PatternRule):
             suggested_fix="Delete this line",
             replacement="",
             expand_line=True,
-            guard=_outside_template,
+            exclude_strings=True,
+        ),
+        Pattern(
+            id="codegen.empty_catch",
+            regex=_EMPTY_CATCH,
+            severity=Severity.WARNING,
+            fixability=Fixability.MANUAL,
+            message="Empty catch block — the error is silently swallowed",
+            suggested_fix="Handle the error (report/rethrow) or remove the try/catch",
+            kinds=frozenset({"code", "jsx", "html"}),
+            exclude_strings=True,
+            exclude_comments=True,
+        ),
+        Pattern(
+            id="codegen.catch_return_default",
+            regex=_CATCH_RETURN_DEFAULT,
+            severity=Severity.WARNING,
+            fixability=Fixability.MANUAL,
+            message="Catch returns a literal default — failure is silently masked",
+            suggested_fix="Surface the error, or make the fallback explicit and logged",
+            kinds=frozenset({"code", "jsx", "html"}),
+            exclude_strings=True,
+            exclude_comments=True,
+        ),
+        Pattern(
+            id="codegen.log_only_catch",
+            regex=_LOG_ONLY_CATCH,
+            severity=Severity.INFO,
+            fixability=Fixability.MANUAL,
+            message="Catch only logs to console — the error goes nowhere useful",
+            suggested_fix="Handle or rethrow; a console line is not error handling",
+            kinds=frozenset({"code", "jsx", "html"}),
+            exclude_strings=True,
+            exclude_comments=True,
         ),
         Pattern(
             id="codegen.restate_comment",
@@ -175,6 +279,17 @@ class CodeGenRule(PatternRule):
             fixability=Fixability.MANUAL,
             message="Comment merely restates the next line of code",
             suggested_fix="Delete the redundant comment or explain *why*, not *what*",
-            guard=_outside_template,
+            exclude_strings=True,
+        ),
+        Pattern(
+            id="codegen.markdown_fence",
+            regex=_FENCE,
+            severity=Severity.ERROR,
+            fixability=Fixability.MANUAL,
+            message="Leftover Markdown code fence pasted from a chat — breaks this file",
+            suggested_fix="Delete the ``` fence (and any chat text) pasted in by mistake",
+            kinds=frozenset({"code", "html", "jsx"}),
+            # No string masking here: the fence *is* backticks, which the lexer
+            # would read as a template literal and wrongly suppress.
         ),
     ]

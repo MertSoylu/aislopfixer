@@ -13,8 +13,8 @@ from textual.widgets import ProgressBar, Static
 
 from .base import AdaptiveScreen
 from ..engine.models import Category, Finding, SourceFile
-from ..engine.runner import run_cross_rules, run_file_rules
-from ..scanner import count_eligible, iter_files
+from ..pipeline import scan_project
+from ..scanner import count_eligible
 from ..theme import ACCENT, CATEGORY_COLORS, CATEGORY_ICON, DIM, OK
 from ..widgets import CountUp, ScanPulse, Spinner
 
@@ -62,6 +62,8 @@ class ScanScreen(AdaptiveScreen):
         self._path = path
         self._total = 0
         self._done = 0
+        self._found = 0
+        self._t0 = 0.0
         self._counts: dict[Category, int] = {c: 0 for c in Category}
 
     def compose(self) -> ComposeResult:
@@ -98,14 +100,27 @@ class ScanScreen(AdaptiveScreen):
         t.append(f" / {self._total} files", style=DIM)
         t.append("   ·   ", style=_FAINT)
         t.append(f"{pct}%", style=_TEXT)
+        t.append("   ·   ", style=_FAINT)
+        found_color = "#fbbf24" if self._found else DIM
+        t.append(f"{self._found} found", style=found_color)
+        if self._t0:
+            t.append("   ·   ", style=_FAINT)
+            t.append(f"{time.monotonic() - self._t0:.0f}s", style=DIM)
         return t
 
     def on_mount(self) -> None:
         box = self.query_one("#scan-box")
+        box.border_title = "◇ SCAN"
         box.styles.opacity = 0.0
         box.styles.animate("opacity", 1.0, duration=0.4)
+        self._t0 = time.monotonic()
+        self._clock = self.set_interval(0.5, self._tick_clock)
         self.call_after_refresh(self._fit)
         self._scan()
+
+    def _tick_clock(self) -> None:
+        if self._total:
+            self.query_one("#scan-count", Static).update(self._count_line())
 
     @work(thread=True)
     def _scan(self) -> None:
@@ -114,23 +129,18 @@ class ScanScreen(AdaptiveScreen):
             self.post_message(SetTotal(total))
             # spread tiny scans over ~1.2s so the animation is visible; ~0 for big repos
             delay = min(0.04, 1.2 / total) if total else 0.0
-            store = getattr(self.app, "store", None)
-            files: list[SourceFile] = []
-            findings: list[Finding] = []
-            for sf in iter_files(self._path):
-                file_findings = run_file_rules(sf)
-                if store is not None:
-                    file_findings = store.filter(file_findings)
-                files.append(sf)
-                findings.extend(file_findings)
+
+            def on_file(sf: SourceFile, file_findings: list[Finding]) -> None:
                 self.post_message(FileDone(sf.rel_path, file_findings))
                 if delay:
                     time.sleep(delay)
-            self.post_message(CrossStart())
-            cross = run_cross_rules(files)
-            if store is not None:
-                cross = store.filter(cross)
-            findings.extend(cross)
+
+            findings = scan_project(
+                self._path,
+                store=getattr(self.app, "store", None),
+                on_file=on_file,
+                on_cross_start=lambda: self.post_message(CrossStart()),
+            )
             self.post_message(Done(findings))
         except Exception as exc:  # noqa: BLE0001 — surface any engine failure to the UI
             self.post_message(Failed(f"{type(exc).__name__}: {exc}"))
@@ -160,6 +170,7 @@ class ScanScreen(AdaptiveScreen):
         changed: set[Category] = set()
         for f in message.findings:
             self._counts[f.category] += 1
+            self._found += 1
             changed.add(f.category)
         for cat in changed:
             self.query_one(f"#cat-{cat.name}", CountUp).set_target(self._counts[cat])
@@ -172,6 +183,9 @@ class ScanScreen(AdaptiveScreen):
             )
 
     def on_done(self, message: Done) -> None:
+        self._clock.stop()
+        self._found = len(message.findings)
+        self.query_one("#scan-count", Static).update(self._count_line())
         self.query_one("#scan-prog", ProgressBar).update(progress=100)
         total = len(message.findings)
         spinner = self.query_one("#scan-spinner", Spinner)
@@ -186,6 +200,7 @@ class ScanScreen(AdaptiveScreen):
         self.set_timer(0.8, lambda: self.app.show_results(message.findings))
 
     def on_failed(self, message: Failed) -> None:
+        self._clock.stop()
         spinner = self.query_one("#scan-spinner", Spinner)
         spinner.stop()
         err = Text()

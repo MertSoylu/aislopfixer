@@ -59,6 +59,47 @@ def test_buzzwords_ignored_in_code():
     assert not any(x.category is Category.BUZZWORD for x in f)
 
 
+def test_buzzwords_ignored_in_jsx_code():
+    # JSX/TSX module code sits outside tags — it is code, not prose.
+    text = (
+        "const leverage = synergy();\n"
+        "function supercharge() { return 1 }\n"
+        "export default () => <div>fast</div>;\n"
+    )
+    f = run_file_rules(sf(text, "Page.tsx"))
+    assert not any(x.category is Category.BUZZWORD for x in f)
+
+
+def test_buzzwords_flagged_in_jsx_text_node():
+    text = "export default () => <p>Our seamless, world-class platform.</p>;\n"
+    f = run_file_rules(sf(text, "Page.tsx"))
+    assert any(x.category is Category.BUZZWORD for x in f)
+
+
+def test_jsx_brace_free_body_prose_still_detected():
+    # A component body with no inner {expr} braces must not have its own function
+    # braces mistaken for one giant interpolation (which would erase the prose).
+    text = (
+        "export default function Page() {\n"
+        "  return (\n"
+        "    <h1>Our seamless, world-class platform</h1>\n"
+        "  );\n"
+        "}\n"
+    )
+    f = run_file_rules(sf(text, "Page.tsx"))
+    assert any(x.category is Category.BUZZWORD for x in f)
+
+
+def test_jsx_real_interpolation_still_excluded():
+    # A genuine {expr} interpolation inside a text node is still treated as code.
+    text = "export default () => <p>total {synergy} leverage</p>;\n"
+    f = run_file_rules(sf(text, "Page.tsx"))
+    # 'synergy' sits inside {…}; only the surrounding prose words are eligible,
+    # and neither 'total' nor 'leverage' here is a standalone buzzword hit on its
+    # own line — assert the interpolated identifier did not produce a buzzword.
+    assert not any(x.matched_text == "synergy" for x in f)
+
+
 def test_buzzwords_flagged_in_html_text():
     text = "<p>Our cutting-edge, seamless, world-class platform.</p>\n"
     f = run_file_rules(sf(text, "index.html"))
@@ -100,7 +141,9 @@ def test_legit_cant_help_but_not_flagged():
 def test_llm_tell_buzzwords_flagged_in_prose():
     text = "<p>We delve into a rich tapestry of unparalleled solutions.</p>\n"
     ids = {x.rule_id for x in run_file_rules(sf(text))}
-    assert "buzzword.delve" in ids
+    # "delve" sits inside "delve into"; the containment pass keeps the longer,
+    # more specific match and drops the redundant nested one.
+    assert "buzzword.delve_into" in ids
     assert "buzzword.tapestry" in ids
     assert "buzzword.unparalleled" in ids
 
