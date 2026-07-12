@@ -13,6 +13,7 @@ from collections.abc import Callable
 from .config import Config
 from .engine.models import Finding, SourceFile
 from .engine.runner import run_cross_rules, run_file_rules
+from .engine.scoring import reset_and_corroborate
 from .scanner import iter_files
 from .store import NOISY_DEMOTION, Store
 
@@ -38,6 +39,10 @@ def scan_project(
     ``on_file`` fires after each file (progress display); ``on_cross_start``
     fires once between the per-file pass and the cross-file pass. ``config``
     defaults to the project's ``.aislopfixer.toml`` (all-defaults if absent).
+
+    After file + cross rules merge, confidences are recomputed and corroborated
+    per file so cross-file tells (imports, duplicates) reinforce same-file
+    authorship signals. Noisy-rule demotion runs last so it is not wiped.
     """
     cfg = config if config is not None else Config.load(path)
     noisy = store.noisy_rules() if store is not None else set()
@@ -53,7 +58,6 @@ def scan_project(
         file_findings = keep(run_file_rules(sf))
         if store is not None:
             file_findings = store.filter(file_findings)
-        demote_noisy(file_findings, noisy)
         files.append(sf)
         findings.extend(file_findings)
         if on_file is not None:
@@ -63,6 +67,7 @@ def scan_project(
     cross = keep(run_cross_rules(files))
     if store is not None:
         cross = store.filter(cross)
-    demote_noisy(cross, noisy)
     findings.extend(cross)
+    reset_and_corroborate(findings)
+    demote_noisy(findings, noisy)
     return findings

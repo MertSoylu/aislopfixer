@@ -131,6 +131,17 @@ def test_soft_ai_leak_is_manual_only():
     assert f and all(x.fixability is Fixability.MANUAL for x in f)
 
 
+def test_soft_ai_leak_in_js_string_not_flagged():
+    """Soft phrases quoted in code are not site content."""
+    f = [
+        x for x in run_file_rules(
+            sf('const msg = "I hope this helps!";\nexport default msg;\n', "msg.js")
+        )
+        if x.category is Category.AI_LEAK
+    ]
+    assert not f
+
+
 def test_legit_cant_help_but_not_flagged():
     f = [x for x in run_file_rules(sf("<p>I can't help but love our coffee.</p>\n"))
          if x.category is Category.AI_LEAK]

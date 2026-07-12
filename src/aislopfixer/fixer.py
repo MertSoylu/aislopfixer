@@ -108,10 +108,14 @@ def apply_fix(finding: Finding, value: str | None = None, *, backup: bool = True
 
 def _comment_for(path: str, msg: str) -> str:
     ext = Path(path).suffix.lower()
-    if ext in {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"}:
+    if ext in {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro"}:
+        # SFCs are mostly JS in <script>; // is valid there and harmless in
+        # markup as a non-tag line the next scan will still recognize.
         return f"// aislopfixer: {msg}"
     if ext == ".css":
         return f"/* aislopfixer: {msg} */"
+    if ext in {".md", ".mdx"}:
+        return f"<!-- aislopfixer: {msg} -->"
     return f"<!-- aislopfixer: {msg} -->"
 
 

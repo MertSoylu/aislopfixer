@@ -93,9 +93,14 @@ RULE_OVERRIDE: dict[str, float] = {
     "security.high_entropy_secret": 0.72,
     # Visual design tells: each is a style choice a human *could* make, so none
     # clears the auto-fix floor alone — corroboration lifts them when the file
-    # carries other authorship tells.
+    # carries other authorship tells. landing_kit is multi-signal so higher.
     "design.gradient_cliche": 0.62,
+    "design.gradient_text": 0.55,
     "design.fake_social_proof": 0.68,
+    "design.fake_avatar": 0.78,
+    "design.stock_illustration": 0.70,
+    "design.glassmorphism": 0.58,
+    "design.landing_kit": 0.82,
     "design.emoji_ui": 0.72,
     "prose.emdash_density": 0.45,
     "md.bold_lead_list": 0.55,
@@ -153,6 +158,23 @@ def corroborate(findings: list[Finding]) -> list[Finding]:
     factor = min(0.4, _CORROBORATION_STEP * extra)
     for f in findings:
         f.confidence = _clamp01(f.confidence + (1.0 - f.confidence) * factor)
+    return findings
+
+
+def reset_and_corroborate(findings: list[Finding]) -> list[Finding]:
+    """Recompute base confidences, then corroborate per file.
+
+    Used after file-rules and cross-rules are merged so an ``import.*`` tell in
+    the same file as ``ai_leak`` / ``design.*`` still lifts the group. Mutates
+    and returns ``findings`` (order preserved).
+    """
+    for f in findings:
+        f.confidence = score_finding(f)
+    by_file: dict[str, list[Finding]] = {}
+    for f in findings:
+        by_file.setdefault(f.file, []).append(f)
+    for group in by_file.values():
+        corroborate(group)
     return findings
 
 

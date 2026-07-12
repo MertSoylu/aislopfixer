@@ -19,20 +19,27 @@ EXTENSIONS = {
 }
 
 # Repo-meta and AI-instruction docs — these are not website content, so scanning
-# them only produces noise. Matched by filename stem, case-insensitively, at any
-# extension (README.md, CLAUDE.md, AGENTS.md, LICENSE, ...).
+# them only produces noise. Matched by filename stem, case-insensitively, and
+# only for *doc-like* extensions. ``security.ts`` / ``support.tsx`` are real
+# source modules and must still be scanned.
 IGNORE_FILE_STEMS = {
     "readme", "claude", "agents", "gemini", "copilot",
     "contributing", "changelog", "license", "code_of_conduct",
     "security", "codeowners", "authors", "notice", "support",
 }
+# LICENSE (no ext), README.md, SECURITY.md, … — not security.js / support.tsx
+_META_DOC_EXTS = {"", ".md", ".mdx", ".txt", ".rst", ".markdown"}
 
 MAX_BYTES = 2_000_000
 
 
 def _is_meta_file(name: str) -> bool:
     """True for repo-meta/instruction docs we never want to scan."""
-    return os.path.splitext(name)[0].lower() in IGNORE_FILE_STEMS
+    stem, ext = os.path.splitext(name)
+    return (
+        stem.lower() in IGNORE_FILE_STEMS
+        and ext.lower() in _META_DOC_EXTS
+    )
 
 
 def iter_files(root: str):

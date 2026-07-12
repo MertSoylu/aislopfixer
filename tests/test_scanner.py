@@ -40,6 +40,17 @@ def test_meta_docs_skipped(tmp_path):
     assert rels == {"index.html", "guide.md"}
 
 
+def test_source_modules_sharing_meta_stem_are_scanned(tmp_path):
+    """security.md is meta; security.ts is real app code and must scan."""
+    (tmp_path / "security.md").write_text("# policy", encoding="utf-8")
+    (tmp_path / "security.ts").write_text("export const x = 1;\n", encoding="utf-8")
+    (tmp_path / "support.tsx").write_text("export const S = () => null;\n", encoding="utf-8")
+    rels = {sf.rel_path for sf in collect(str(tmp_path))}
+    assert "security.md" not in rels
+    assert "security.ts" in rels
+    assert "support.tsx" in rels
+
+
 def test_meta_match_is_case_insensitive(tmp_path):
     (tmp_path / "ReadMe.md").write_text("x", encoding="utf-8")
     (tmp_path / "Agents.MD").write_text("x", encoding="utf-8")

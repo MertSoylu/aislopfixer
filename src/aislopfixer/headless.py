@@ -109,20 +109,28 @@ def run_check(
 
 
 def _apply_auto_fixes(findings: list[Finding], store: Store | None) -> int:
-    """Apply the confidence-gated AUTO fixes; record them; return the count."""
+    """Apply the confidence-gated AUTO fixes; record them; return the count.
+
+    Fixes are applied high-offset-first so earlier deletes do not invalidate
+    later spans before ``fixer._locate`` can re-anchor them.
+    """
     from .engine.models import Fixability
 
-    n = 0
-    for f in findings:
+    targets = [
+        f for f in findings
         if (
             f.status is Status.OPEN
             and f.fixability is Fixability.AUTO
             and f.confidence >= AUTO_FIX_FLOOR
-        ):
-            if fixer.apply_fix(f, None):
-                n += 1
-                if store is not None:
-                    store.record(f, flush=False)
+        )
+    ]
+    targets.sort(key=lambda f: (f.file, f.start), reverse=True)
+    n = 0
+    for f in targets:
+        if fixer.apply_fix(f, None):
+            n += 1
+            if store is not None:
+                store.record(f, flush=False)
     if store is not None and n:
         store.flush()
     return n

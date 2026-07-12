@@ -45,13 +45,27 @@ _CSS_EXT = {".css"}
 
 
 def _lex(text: str, *, line_comment: str | None,
-         block: tuple[str, str], templates: bool
-         ) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+         block: tuple[str, str], templates: bool,
+         start: int = 0, end: int | None = None,
+         stop_at_brace_depth: int | None = None,
+         ) -> tuple[list[tuple[int, int]], list[tuple[int, int]], int]:
+    """Lex ``text[start:end]`` into string/comment spans.
+
+    When ``stop_at_brace_depth`` is set (template ``${…}`` expressions), stop
+    once brace nesting returns to that depth after having entered deeper —
+    so code *inside* interpolations is not marked as string content.
+
+    Returns ``(strings, comments, index)`` where ``index`` is the first unconsumed
+    offset (``end``, or the position after a closing ``}`` when brace-stopped).
+    """
     strings: list[tuple[int, int]] = []
     comments: list[tuple[int, int]] = []
-    n = len(text)
+    n = len(text) if end is None else min(end, len(text))
     bo, bc = block
-    i = 0
+    i = start
+    # Brace nesting for ${…} holes. Count only outside strings/comments so a
+    # literal "}" inside a string does not close the interpolation early.
+    brace_depth = 0
     while i < n:
         c = text[i]
         if line_comment and text.startswith(line_comment, i):
@@ -66,7 +80,7 @@ def _lex(text: str, *, line_comment: str | None,
             comments.append((i, j))
             i = j
             continue
-        if c in ("'", '"') or (templates and c == "`"):
+        if c in ("'", '"'):
             j = i + 1
             while j < n:
                 cj = text[j]
@@ -76,23 +90,71 @@ def _lex(text: str, *, line_comment: str | None,
                 if cj == c:
                     j += 1
                     break
-                if c != "`" and cj == "\n":  # unterminated quote — stop at EOL
+                if cj == "\n":  # unterminated quote — stop at EOL
                     break
                 j += 1
             strings.append((i, min(j, n)))
             i = j
             continue
+        if templates and c == "`":
+            # Template literal: static chunks are strings; ${…} holes are code
+            # (recursively lexed so nested templates/strings/comments work).
+            seg = i  # include opening backtick in the first static span
+            i += 1
+            while i < n:
+                cj = text[i]
+                if cj == "\\":
+                    i += 2
+                    continue
+                if cj == "`":
+                    strings.append((seg, i + 1))
+                    i += 1
+                    break
+                if cj == "$" and i + 1 < n and text[i + 1] == "{":
+                    if seg < i:
+                        strings.append((seg, i))
+                    # Lex the expression; returns index past the closing `}`.
+                    _, _, i = _lex(
+                        text,
+                        line_comment=line_comment,
+                        block=block,
+                        templates=True,
+                        start=i + 2,
+                        end=n,
+                        stop_at_brace_depth=0,
+                    )
+                    seg = i
+                    continue
+                i += 1
+            else:
+                # Unclosed template — mark remainder as string.
+                strings.append((seg, n))
+            continue
+        if stop_at_brace_depth is not None:
+            if c == "{":
+                brace_depth += 1
+                i += 1
+                continue
+            if c == "}":
+                if brace_depth == 0:
+                    # Closes the ${ that opened before ``start``.
+                    return strings, comments, i + 1
+                brace_depth -= 1
+                i += 1
+                continue
         i += 1
-    return strings, comments
+    return strings, comments, i
 
 
 def code_masks(text: str, ext: str) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
     """``(string_spans, comment_spans)`` for a source file; ``([], [])`` if unknown."""
     ext = ext.lower()
     if ext in _JS_EXT:
-        return _lex(text, line_comment="//", block=("/*", "*/"), templates=True)
+        s, c, _ = _lex(text, line_comment="//", block=("/*", "*/"), templates=True)
+        return s, c
     if ext in _CSS_EXT:
-        return _lex(text, line_comment=None, block=("/*", "*/"), templates=False)
+        s, c, _ = _lex(text, line_comment=None, block=("/*", "*/"), templates=False)
+        return s, c
     return [], []
 
 
@@ -155,6 +217,43 @@ def _html_text_spans(text: str) -> list[tuple[int, int]]:
     return _gaps(blocked, len(text))
 
 
+# Script bodies in HTML/SFC files — comments inside them are human prose
+# (AI-leak / buzzword residue lands in Vue/Svelte <script> as often as .js).
+_SCRIPT_OPEN = re.compile(r"<script\b[^>]*>", re.I)
+_SCRIPT_CLOSE = re.compile(r"</script\s*>", re.I)
+
+
+def _script_bodies(text: str) -> list[tuple[int, int]]:
+    """``(start, end)`` of each ``<script>…</script>`` body (content only)."""
+    out: list[tuple[int, int]] = []
+    pos = 0
+    n = len(text)
+    while pos < n:
+        m = _SCRIPT_OPEN.search(text, pos)
+        if m is None:
+            break
+        body_start = m.end()
+        close = _SCRIPT_CLOSE.search(text, body_start)
+        if close is None:
+            out.append((body_start, n))
+            break
+        out.append((body_start, close.start()))
+        pos = close.end()
+    return out
+
+
+def _script_comment_spans(text: str) -> list[tuple[int, int]]:
+    """Comment spans inside ``<script>`` blocks, absolute offsets into ``text``."""
+    out: list[tuple[int, int]] = []
+    for a, b in _script_bodies(text):
+        if a >= b:
+            continue
+        # Slice-local masks, then shift. .js masks cover // and /* */ for TS/JS.
+        _, comments = code_masks(text[a:b], ".js")
+        out.extend((a + ca, a + cb) for ca, cb in comments)
+    return out
+
+
 def _jsx_text_spans(text: str) -> list[tuple[int, int]]:
     """Visible text nodes in JSX/TSX — only the gaps *flanked by tags*.
 
@@ -200,11 +299,19 @@ def prose_regions(text: str, kind: str, ext: str | None = None) -> list[tuple[in
     just as easily as into page copy. Pass ``ext`` (e.g. ``".ts"``) to mine those
     comment spans; without it, code files return ``[]`` (identifiers are never
     prose).
+
+    HTML/SFC (``.vue`` / ``.svelte`` / ``.astro`` / ``.html``): text nodes *and*
+    comments inside ``<script>`` blocks — models dump residue into both.
     """
     if kind == "html":
-        return _html_text_spans(text)
+        return _html_text_spans(text) + _script_comment_spans(text)
     if kind == "jsx":
-        return _jsx_text_spans(text)
+        # Module-scope comments are prose too (same as pure .js via ext).
+        regions = _jsx_text_spans(text)
+        if ext:
+            _, comments = code_masks(text, ext)
+            regions = regions + comments
+        return regions
     if kind == "md":
         return _md_text_spans(text)
     if kind == "code" and ext:

@@ -56,14 +56,15 @@ class AILeakRule(PatternRule):
     def scan(self, sf: SourceFile) -> list[Finding]:
         # Code comments are human prose too — an "as an AI language model" tell
         # leaks into a JSDoc block as readily as into page copy (ext enables it).
+        # Soft sign-offs are gated the same way: a string literal or test fixture
+        # that quotes "I hope this helps" is not site content.
         regions = prose_regions(sf.text, file_kind(sf.rel_path), ext_of(sf.rel_path))
         # overlap check instead of strict containment — expand_line pushes
         # start/end to full line boundaries which may include HTML tags
         # on the same line. As long as the line overlaps prose, it's valid.
         return [
             f for f in super().scan(sf)
-            if f.fixability != Fixability.AUTO
-            or any(a < f.end and f.start < b for a, b in regions)
+            if any(a < f.end and f.start < b for a, b in regions)
         ]
 
     # STRONG first: on a line matching both, dedupe keeps the AUTO-fix finding.

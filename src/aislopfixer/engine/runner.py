@@ -117,9 +117,16 @@ def run_cross_rules(files: list[SourceFile]) -> list[Finding]:
 
 
 def scan_all(files: list[SourceFile]) -> list[Finding]:
-    """Convenience: run all rules over all files."""
+    """Convenience: run all rules over all files.
+
+    File-rule findings are corroborated once inside :func:`run_file_rules`;
+    after cross-rules join, confidences are recomputed so import/duplicate
+    tells co-boost with same-file authorship signals.
+    """
+    from .scoring import reset_and_corroborate
+
     out: list[Finding] = []
     for sf in files:
         out.extend(run_file_rules(sf))
     out.extend(run_cross_rules(files))
-    return out
+    return reset_and_corroborate(out)

@@ -53,10 +53,76 @@ def test_elision_inside_template_literal_not_flagged():
     assert "codegen.elision" not in ids(run_file_rules(sf(text)))
 
 
+def test_eval_inside_template_interpolation_flagged():
+    """${…} holes are code — exclude_strings must not swallow sinks there."""
+    text = "const x = `ok ${eval(userInput)}`;\n"
+    assert "security.eval" in ids(run_file_rules(sf(text)))
+    # Hole itself is not a string span.
+    strings, _ = code_masks(text, ".js")
+    assert not point_in(strings, text.index("eval"))
+
+
+def test_eval_in_template_static_chunk_not_flagged():
+    text = "const s = `never call eval() on input`;\n"
+    assert "security.eval" not in ids(run_file_rules(sf(text)))
+
+
+def test_nested_template_interpolation_lexed():
+    text = "const x = `a ${`b ${eval(y)} c`} d`;\n"
+    assert "security.eval" in ids(run_file_rules(sf(text)))
+    strings, _ = code_masks(text, ".js")
+    assert not point_in(strings, text.index("eval"))
+
+
+def test_brace_in_string_inside_interpolation_does_not_break_lex():
+    text = 'const x = `hi ${foo("}") + eval(z)}`;\n'
+    assert "security.eval" in ids(run_file_rules(sf(text)))
+
+
 # ----------------------------------------------------- #6 comments mined as prose
 def test_ai_leak_in_code_comment_flagged():
     text = "// As an AI language model, I should note this.\nexport const x = 1;\n"
     assert any(r.startswith("ai_leak.strong") for r in ids(run_file_rules(sf(text))))
+
+
+def test_ai_leak_in_vue_script_comment_flagged():
+    text = (
+        "<template><p>hi</p></template>\n"
+        "<script setup>\n"
+        "// As an AI language model, I should note this.\n"
+        "export const x = 1;\n"
+        "</script>\n"
+    )
+    assert any(
+        r.startswith("ai_leak.strong")
+        for r in ids(run_file_rules(sf(text, "Widget.vue")))
+    )
+
+
+def test_buzzword_in_svelte_script_comment_flagged():
+    text = (
+        "<script>\n"
+        "// we leverage synergy to deliver value\n"
+        "let x = 1;\n"
+        "</script>\n"
+        "<p>ok</p>\n"
+    )
+    assert any(
+        r.startswith("buzzword")
+        for r in ids(run_file_rules(sf(text, "Card.svelte")))
+    )
+
+
+def test_buzzword_in_html_script_comment_flagged():
+    text = (
+        "<html><body>\n"
+        "<script>\n// leverage cutting-edge synergy here\n</script>\n"
+        "</body></html>\n"
+    )
+    assert any(
+        r.startswith("buzzword")
+        for r in ids(run_file_rules(sf(text, "page.html")))
+    )
 
 
 def test_buzzword_in_code_comment_flagged():
@@ -94,6 +160,28 @@ def test_corroboration_boosts_cooccurring_tells():
     base = next(f.confidence for f in run_file_rules(solo)
                 if f.rule_id == "codegen.debugger")
     assert boosted > base
+
+
+def test_scan_all_corroborates_cross_with_file_tells():
+    """Import (cross) + debugger (file) in same path → import confidence lifts."""
+    from aislopfixer.engine.runner import scan_all
+
+    # undeclared import is a cross-rule; debugger is a file-rule.
+    a = SourceFile(
+        "page.ts", "page.ts",
+        "import { missingThing } from './ghost';\ndebugger;\n",
+    )
+    b = SourceFile("ghost.ts", "ghost.ts", "export const other = 1;\n")
+    found = scan_all([a, b])
+    imp = next(
+        (f for f in found if f.rule_id.startswith("import.") and f.file == "page.ts"),
+        None,
+    )
+    assert imp is not None
+    # Base import.missing_export/undeclared is 0.82/0.85; with codegen co-tell
+    # (debugger family) corroboration must raise it.
+    from aislopfixer.engine.scoring import score_finding
+    assert imp.confidence > score_finding(imp)
 
 
 # ------------------------------------------------------------- #8 containment dedupe

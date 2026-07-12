@@ -52,6 +52,24 @@ CASES: list[dict] = [
         "expect": {"security.eval"},
     },
     {
+        "name": "security_eval_in_template_hole",
+        "filename": "handler.js",
+        "text": "const x = `ok ${eval(userInput)}`;\n",
+        "expect": {"security.eval"},
+    },
+    {
+        "name": "ai_leak_in_vue_script",
+        "filename": "Widget.vue",
+        "text": (
+            "<template><p>hi</p></template>\n"
+            "<script setup>\n"
+            "// As an AI language model, this is a stub.\n"
+            "export const x = 1;\n"
+            "</script>\n"
+        ),
+        "expect": {"ai_leak.strong"},
+    },
+    {
         "name": "security_sqli_template",
         "filename": "db.js",
         "text": "const q = `SELECT * FROM users WHERE id = ${userId}`;\n",
@@ -144,6 +162,12 @@ CASES: list[dict] = [
         "name": "clean_eval_in_string",
         "filename": "msg.js",
         "text": 'const help = "the eval() function is dangerous";\n',
+        "clean": True,
+    },
+    {
+        "name": "clean_eval_in_template_static",
+        "filename": "msg.js",
+        "text": "const help = `the eval() function is dangerous`;\n",
         "clean": True,
     },
     {
@@ -252,6 +276,41 @@ CASES: list[dict] = [
         "name": "clean_single_emoji_copy",
         "filename": "hi.html",
         "text": "<h1>Welcome \U0001f44b</h1><p>Sign in to continue.</p>\n",
+        "clean": True,
+    },
+    {
+        "name": "design_landing_kit",
+        "filename": "landing.html",
+        "text": (
+            '<link href="https://fonts.googleapis.com/css2?family=Inter&display=swap">\n'
+            '<h1 class="text-purple-600">Build faster</h1>\n'
+            '<a href="#">Get Started Free</a><a href="#">Learn More</a>\n'
+            '<section class="grid grid-cols-3 gap-8">\n'
+            '  <div class="rounded-2xl shadow-xl">A</div>\n'
+            '  <div class="rounded-2xl shadow-xl">B</div>\n'
+            '  <div class="rounded-3xl shadow-2xl">C</div>\n'
+            "</section>\n"
+            "<h2>How it works</h2>\n"
+        ),
+        "expect": {"design.landing_kit"},
+    },
+    {
+        "name": "design_fake_avatar",
+        "filename": "testimonial.html",
+        "text": '<img src="https://i.pravatar.cc/150?img=12" alt="customer" />\n',
+        "expect": {"design.fake_avatar"},
+    },
+    {
+        "name": "design_glass_nav",
+        "filename": "nav.html",
+        "text": '<nav class="backdrop-blur-md bg-white/10 border-white/20">Nav</nav>\n',
+        "expect": {"design.glassmorphism"},
+    },
+    {
+        "name": "clean_inter_alone",
+        "filename": "typography.html",
+        "text": "<style>body { font-family: Inter, system-ui, sans-serif; }</style>\n"
+                "<p>Hello</p>\n",
         "clean": True,
     },
 ]

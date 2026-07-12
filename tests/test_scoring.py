@@ -31,6 +31,12 @@ def test_checkmark_bullets_override_clears_auto_fix_floor():
     ) >= 0.60
 
 
+def test_design_landing_kit_override():
+    assert score_finding(
+        _f("design.landing_kit", Category.DESIGN, Severity.WARNING)
+    ) == 0.82
+
+
 def test_category_severity_fallback():
     # BUZZWORD INFO -> 0.55 * 0.55
     v = score_finding(_f("buzzword.seamless", Category.BUZZWORD, Severity.INFO))

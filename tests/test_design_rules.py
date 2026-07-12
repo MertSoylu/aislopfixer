@@ -31,6 +31,20 @@ def test_tailwind_gradient_in_jsx_flagged():
     assert "design.gradient_cliche" in ids(f)
 
 
+def test_tailwind_blue_purple_gradient_flagged():
+    f = run_file_rules(
+        sf('<div class="bg-gradient-to-r from-blue-500 to-indigo-600"></div>\n')
+    )
+    assert "design.gradient_cliche" in ids(f)
+
+
+def test_tailwind_arbitrary_purple_hex_flagged():
+    f = run_file_rules(
+        sf('<div class="bg-gradient-to-r from-[#8b5cf6] to-[#ec4899]"></div>\n')
+    )
+    assert "design.gradient_cliche" in ids(f)
+
+
 def test_slate_gradient_not_flagged():
     f = run_file_rules(
         sf('<div class="bg-gradient-to-r from-slate-900 to-slate-700"></div>\n')
@@ -46,11 +60,44 @@ def test_css_purple_pink_gradient_flagged():
     assert "design.gradient_cliche" in ids(f)
 
 
+def test_css_gradient_hex_after_nested_rgb_flagged():
+    """Nested rgb() must not truncate the gradient before purple/pink hex stops."""
+    f = run_file_rules(
+        sf(
+            ".hero { background: linear-gradient(135deg, "
+            "rgb(0, 0, 0), #8b5cf6, #ec4899); }\n",
+            "hero.css",
+        )
+    )
+    assert "design.gradient_cliche" in ids(f)
+
+
+def test_css_gradient_purple_pink_keywords_flagged():
+    f = run_file_rules(
+        sf(
+            ".hero { background: linear-gradient(to right, purple, pink); }\n",
+            "hero.css",
+        )
+    )
+    assert "design.gradient_cliche" in ids(f)
+
+
 def test_css_blue_gradient_not_flagged():
     f = run_file_rules(
         sf(".hero { background: linear-gradient(#0ea5e9, #0369a1); }\n", "hero.css")
     )
     assert "design.gradient_cliche" not in ids(f)
+
+
+# -------------------------------------------------------------- gradient text
+def test_gradient_text_flagged():
+    f = run_file_rules(
+        sf(
+            '<h1 class="bg-gradient-to-r from-purple-500 to-pink-500 '
+            'bg-clip-text text-transparent">Ship faster</h1>\n'
+        )
+    )
+    assert "design.gradient_text" in ids(f)
 
 
 # ------------------------------------------------------- fabricated social proof
@@ -61,6 +108,11 @@ def test_trusted_by_stat_flagged():
 
 def test_join_users_stat_flagged():
     f = run_file_rules(sf("<p>Join 50k+ happy users today</p>\n"))
+    assert "design.fake_social_proof" in ids(f)
+
+
+def test_review_stat_flagged():
+    f = run_file_rules(sf("<p>4.9/5 from 2,000+ reviews</p>\n"))
     assert "design.fake_social_proof" in ids(f)
 
 
@@ -96,3 +148,94 @@ def test_emoji_in_plain_js_not_flagged():
         )
     )
     assert "design.emoji_ui" not in ids(f)
+
+
+# --------------------------------------------------------------- fake avatars
+def test_pravatar_flagged():
+    f = run_file_rules(
+        sf('<img src="https://i.pravatar.cc/150?img=3" alt="user" />\n')
+    )
+    assert "design.fake_avatar" in ids(f)
+
+
+def test_dicebear_flagged():
+    f = run_file_rules(
+        sf(
+            'export const avatar = "https://api.dicebear.com/7.x/avataaars/svg?seed=x";\n',
+            "Avatar.tsx",
+        )
+    )
+    assert "design.fake_avatar" in ids(f)
+
+
+# -------------------------------------------------------- stock illustration
+def test_undraw_flagged():
+    f = run_file_rules(
+        sf('<img src="https://undraw.co/api/illustrations/happy.svg" alt="" />\n')
+    )
+    assert "design.stock_illustration" in ids(f)
+
+
+# ------------------------------------------------------------ glassmorphism
+def test_glassmorphism_flagged():
+    f = run_file_rules(
+        sf(
+            '<nav class="backdrop-blur-md bg-white/10 border-white/20">'
+            "menu</nav>\n"
+        )
+    )
+    assert "design.glassmorphism" in ids(f)
+
+
+def test_blur_alone_not_glass():
+    f = run_file_rules(sf('<div class="backdrop-blur-sm">just blur</div>\n'))
+    assert "design.glassmorphism" not in ids(f)
+
+
+# -------------------------------------------------------------- landing kit
+def test_landing_kit_fires_on_classic_ai_page():
+    """≥3 distinct families: Inter + purple + soft radius + feature grid + CTAs."""
+    text = """
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+<section class="hero">
+  <h1 class="text-purple-600">Build faster</h1>
+  <a href="#">Get Started Free</a>
+  <a href="#">Learn More</a>
+</section>
+<section class="grid grid-cols-3 gap-8">
+  <div class="rounded-2xl shadow-xl p-6">Feature A</div>
+  <div class="rounded-2xl shadow-xl p-6">Feature B</div>
+  <div class="rounded-3xl shadow-2xl p-6">Feature C</div>
+</section>
+<h2>How it works</h2>
+"""
+    f = run_file_rules(sf(text))
+    assert "design.landing_kit" in ids(f)
+
+
+def test_landing_kit_inter_alone_quiet():
+    f = run_file_rules(
+        sf(
+            "<style>body { font-family: Inter, sans-serif; }</style>\n"
+            "<p>Hello</p>\n"
+        )
+    )
+    assert "design.landing_kit" not in ids(f)
+
+
+def test_landing_kit_one_rounded_quiet():
+    f = run_file_rules(
+        sf('<div class="rounded-2xl p-4 bg-slate-100">card</div>\n')
+    )
+    assert "design.landing_kit" not in ids(f)
+
+
+def test_landing_kit_two_signals_below_threshold():
+    """Inter + one purple class = only 2 families — must stay quiet."""
+    f = run_file_rules(
+        sf(
+            '<link href="https://fonts.googleapis.com/css2?family=Inter&display=swap">'
+            '<button class="bg-indigo-600">Save</button>\n'
+        )
+    )
+    assert "design.landing_kit" not in ids(f)

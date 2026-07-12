@@ -684,8 +684,11 @@ class ResultsScreen(AdaptiveScreen):
         )
 
     def _apply_auto(self, targets: list[Finding], skipped: int) -> None:
+        # High offset first — same order as headless bulk fix — so earlier
+        # deletes do not scramble later spans before relocation.
+        ordered = sorted(targets, key=lambda f: (f.file, f.start), reverse=True)
         n = 0
-        for f in targets:
+        for f in ordered:
             if fixer.apply_fix(f, None):
                 self._record(f, flush=False)
                 self._refresh_label(f)
