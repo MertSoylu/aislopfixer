@@ -16,6 +16,7 @@ clipboard).
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 from .engine.models import Category, Finding, Fixability, Status
@@ -77,7 +78,7 @@ summary — do not invent plausible-looking values.
 no stock purple→pink gradients, no invented statistics, no narration comments.
 5. If a finding looks like a false positive, leave the code alone and say why \
 in your summary instead of "fixing" it.
-6. When you are done, verify with `aislopfixer {target} --check` — it must \
+6. When you are done, verify with `aislopfixer "{target}" --check` — it must \
 report fewer findings and no new ones."""
 
 
@@ -143,9 +144,15 @@ def _entry(n: int, f: Finding) -> list[str]:
     out.append("")
     out.append(f.message)
     out.append("")
-    out.append("```")
-    out.extend(_numbered_snippet(f))
-    out.append("```")
+    if f.start == f.end == 0 and not f.matched_text:
+        # Doc-level aggregate — quoting line 1 would misdirect the agent.
+        out.append("- scope: the whole file (aggregate finding, no single span)")
+    else:
+        snippet = _numbered_snippet(f)
+        fence = _fence_for("\n".join(snippet))
+        out.append(fence)
+        out.extend(snippet)
+        out.append(fence)
     match = _one_line(f.matched_text)
     if match and match != _one_line(f.snippet):
         out.append(f"- match: `{match}`")
@@ -158,6 +165,17 @@ def _entry(n: int, f: Finding) -> list[str]:
             f"({f.prompt_label or 'value'} = the real value)"
         )
     return out
+
+
+def _fence_for(body: str) -> str:
+    """A code fence longer than any backtick run in ``body``.
+
+    Findings from Markdown files (``codegen.markdown_fence`` above all) carry
+    ``` in their snippet — a fixed three-backtick fence would end early and
+    break the brief's rendering.
+    """
+    longest = max((len(m) for m in re.findall(r"`+", body)), default=0)
+    return "`" * max(3, longest + 1)
 
 
 def _numbered_snippet(f: Finding) -> list[str]:

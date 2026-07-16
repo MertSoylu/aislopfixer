@@ -52,6 +52,11 @@ _CODE_SHINGLE_K = 5      # token-gram size
 _COMMENT_LINE = re.compile(r"^\s*(?://|/\*|\*|<!--)")
 _IMPORTISH_LINE = re.compile(r"^\s*(?:import|export)\b")
 _LOGIC_HINT = re.compile(r"\b(?:function|class|return|if|for|while)\b|=>")
+# Copy-pasted setup across test files is accepted practice, not slop.
+_TEST_FILE = re.compile(r"(?:^|[\\/])__tests__[\\/]|\.(?:test|spec)\.[cm]?[jt]sx?$", re.I)
+# When one file set shares this many duplicated blocks, the story is "a copied
+# file", one root cause — report it once per file instead of once per block.
+_COPIED_FILE_MIN_CLUSTERS = 3
 
 
 def _shingles(norm: str) -> frozenset[str]:
@@ -84,6 +89,8 @@ class DuplicateRule:
         for sf in files:
             if file_kind(sf.rel_path) not in ("code", "jsx"):
                 continue
+            if _TEST_FILE.search(sf.rel_path):
+                continue
             for start, end, raw in self._blocks(sf.text):
                 code = [
                     s for line in raw.splitlines()
@@ -108,29 +115,66 @@ class DuplicateRule:
             if len(blocks) >= _MAX_BLOCKS:
                 break
 
+        clusters = [
+            occ for occ in self._cluster(blocks, floor=_CODE_SIMILARITY)
+            if len({b[0].rel_path for b in occ}) >= 2
+        ]
+        # Group clusters by the file set they span: many shared blocks between
+        # the same files is ONE copied file, not N independent duplications.
+        by_files: dict[frozenset[str], list[list]] = {}
+        for occ in clusters:
+            by_files.setdefault(frozenset(b[0].rel_path for b in occ), []).append(occ)
+
         out: list[Finding] = []
-        for occ in self._cluster(blocks, floor=_CODE_SIMILARITY):
-            if len({b[0].rel_path for b in occ}) < 2:
-                continue
-            locs = [f"{b[0].rel_path}:{line_col(b[0].text, b[1])[0]}" for b in occ]
-            for i, (sf, start, end, _norm, _sh) in enumerate(occ):
-                others = ", ".join(loc for j, loc in enumerate(locs) if j != i)
-                out.append(
-                    build_finding(
-                        sf,
-                        rule_id="duplicate.code_block",
-                        category=self.category,
-                        severity=Severity.INFO,
-                        message=(
-                            f"Duplicated code block (appears {len(occ)}×; "
-                            f"also at {others})"
-                        ),
-                        start=start,
-                        end=end,
-                        fixability=Fixability.MANUAL,
-                        suggested_fix="Extract into a shared module and import it",
+        for file_set, group in by_files.items():
+            if len(group) >= _COPIED_FILE_MIN_CLUSTERS:
+                # One finding per file, anchored at its first shared block.
+                first: dict[str, tuple[SourceFile, int, int]] = {}
+                for occ in group:
+                    for sf, start, end, _norm, _sh in occ:
+                        cur = first.get(sf.rel_path)
+                        if cur is None or start < cur[1]:
+                            first[sf.rel_path] = (sf, start, end)
+                for rel, (sf, start, end) in first.items():
+                    others = ", ".join(sorted(file_set - {rel}))
+                    out.append(
+                        build_finding(
+                            sf,
+                            rule_id="duplicate.code_block",
+                            category=self.category,
+                            severity=Severity.INFO,
+                            message=(
+                                f"{len(group)} near-identical code blocks "
+                                f"shared with {others} — looks like a copied "
+                                "module"
+                            ),
+                            start=start,
+                            end=end,
+                            fixability=Fixability.MANUAL,
+                            suggested_fix="Keep one copy and import it everywhere",
+                        )
                     )
-                )
+                continue
+            for occ in group:
+                locs = [f"{b[0].rel_path}:{line_col(b[0].text, b[1])[0]}" for b in occ]
+                for i, (sf, start, end, _norm, _sh) in enumerate(occ):
+                    others = ", ".join(loc for j, loc in enumerate(locs) if j != i)
+                    out.append(
+                        build_finding(
+                            sf,
+                            rule_id="duplicate.code_block",
+                            category=self.category,
+                            severity=Severity.INFO,
+                            message=(
+                                f"Duplicated code block (appears {len(occ)}×; "
+                                f"also at {others})"
+                            ),
+                            start=start,
+                            end=end,
+                            fixability=Fixability.MANUAL,
+                            suggested_fix="Extract into a shared module and import it",
+                        )
+                    )
         return out
 
     # ------------------------------------------------------------ prose pass

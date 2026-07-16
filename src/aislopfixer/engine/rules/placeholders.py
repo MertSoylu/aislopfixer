@@ -180,7 +180,13 @@ class PlaceholderRule(PatternRule):
         ),
         Pattern(
             id="placeholder.todo",
-            regex=re.compile(r"\b(?:TODO|FIXME|XXX|HACK)\b[:\s][^\n]*"),
+            # Tempered so the match stops before a comment closer — otherwise
+            # `{/* TODO: x */}` / `<!-- TODO: x -->` hand a fix brief a match
+            # whose deletion would break the surrounding comment syntax.
+            regex=re.compile(
+                r"\b(?:TODO|FIXME|XXX|HACK)\b[:\s]"
+                r"(?:(?![ \t]*(?:\*/|-->))[^\n])*"
+            ),
             severity=Severity.INFO,
             fixability=Fixability.MANUAL,
             message="Unfinished TODO/FIXME marker",

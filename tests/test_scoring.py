@@ -69,3 +69,41 @@ def test_project_score_from_findings_groups_by_file():
     b = _f("buzzword.x", Category.BUZZWORD, Severity.INFO, 0.30)
     b.file = "b.html"
     assert project_score_from_findings([a, b]) > 0.0
+
+
+def test_pinned_confidence_survives_reset_and_corroborate():
+    from aislopfixer.engine.scoring import reset_and_corroborate
+
+    pinned = _f("design.custom_rule", Category.DESIGN, Severity.WARNING, 0.33)
+    pinned.pinned = True
+    other = _f("ai_leak.strong.0", Category.AI_LEAK, Severity.ERROR)
+    reset_and_corroborate([pinned, other])
+    assert pinned.confidence == 0.33   # not reset, not corroboration-boosted
+    assert other.confidence > 0.97     # two tell families -> boosted past base
+
+
+def test_build_finding_confidence_param_pins():
+    from aislopfixer.engine.util import build_finding
+
+    src = SourceFile(abs_path="a.html", rel_path="a.html", text="hello world\n")
+    f = build_finding(
+        src, rule_id="x.y", category=Category.DESIGN,
+        severity=Severity.INFO, message="m", start=0, end=5, confidence=0.5,
+    )
+    assert f.confidence == 0.5 and f.pinned
+
+
+def test_checkmark_and_emoji_count_as_one_family():
+    from aislopfixer.engine.scoring import corroborate
+
+    # Both are Markdown emoji decoration — one habit must not corroborate itself.
+    a = _f("md.emoji_header", Category.CODE_SLOP, Severity.INFO, 0.5)
+    b = _f("md.checkmark_bullets", Category.CODE_SLOP, Severity.INFO, 0.5)
+    corroborate([a, b])
+    assert a.confidence == 0.5 and b.confidence == 0.5
+
+    # But checkmark bullets DO corroborate against a genuinely distinct family.
+    c = _f("md.checkmark_bullets", Category.CODE_SLOP, Severity.INFO, 0.5)
+    d = _f("ai_leak.strong.0", Category.AI_LEAK, Severity.ERROR, 0.9)
+    corroborate([c, d])
+    assert c.confidence > 0.5

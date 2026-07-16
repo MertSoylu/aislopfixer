@@ -43,8 +43,13 @@ def build_finding(
     replace_template: str | None = None,
     prompt_label: str | None = None,
     expand_line: bool = False,
+    confidence: float | None = None,
 ) -> Finding:
-    """Construct a Finding, computing line/col/snippet from the span."""
+    """Construct a Finding, computing line/col/snippet from the span.
+
+    Pass ``confidence`` to *pin* it: the scoring layer will neither backfill
+    nor reset nor corroboration-boost a pinned value.
+    """
     text = sf.text
     if expand_line:
         start, end = line_bounds(text, start)
@@ -67,4 +72,6 @@ def build_finding(
         replacement=replacement,
         replace_template=replace_template,
         prompt_label=prompt_label,
+        confidence=0.0 if confidence is None else confidence,
+        pinned=confidence is not None,
     )

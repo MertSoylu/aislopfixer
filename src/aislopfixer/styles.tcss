@@ -358,9 +358,21 @@ SummaryScreen {
 }
 
 /* ---------- Modals ---------- */
-PromptModal, ConfirmModal, HelpModal, ExportModal {
+PromptModal, ConfirmModal, HelpModal, ExportModal, DiffModal {
     align: center middle;
     background: #000000 60%;
+}
+DiffModal #modal-box {
+    width: 90;
+}
+#diff-body {
+    margin: 1 0;
+    max-height: 24;
+    overflow-y: auto;
+}
+#modal-src {
+    height: 1;
+    margin-top: 1;
 }
 #modal-box {
     width: 72;

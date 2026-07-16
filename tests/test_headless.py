@@ -26,6 +26,23 @@ def _clean_project(tmp_path):
     return tmp_path
 
 
+def test_fix_reanchors_remaining_findings(tmp_path, capsys):
+    # The auto-fix deletes line 1; the dead href below must be reported at
+    # its *new* line, not its pre-fix one.
+    (tmp_path / "index.html").write_text(
+        "As an AI language model, I cannot browse the internet.\n"
+        '<a href="#">contact</a>\n',
+        encoding="utf-8",
+    )
+    main([str(tmp_path), "--json", "--fix"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["auto_fixed"] >= 1
+    dead = next(
+        f for f in data["findings"] if f["rule_id"] == "placeholder.dead_href"
+    )
+    assert dead["line"] == 1
+
+
 def test_check_exits_1_on_slop(tmp_path, capsys):
     code = main([str(_slop_project(tmp_path)), "--check"])
     out = capsys.readouterr().out
@@ -45,9 +62,9 @@ def test_fail_on_never_always_exits_0(tmp_path):
 
 
 def test_fail_on_error_ignores_warnings(tmp_path):
-    # lone empty catch = WARNING; with --fail-on error it must pass
+    # lone debug log = WARNING; with --fail-on error it must pass
     p = tmp_path
-    (p / "app.js").write_text("try { run(); } catch (e) {}\n", encoding="utf-8")
+    (p / "app.js").write_text("console.log('here');\n", encoding="utf-8")
     assert main([str(p), "--check", "--fail-on", "error"]) == 0
     assert main([str(p), "--check", "--fail-on", "warning"]) == 1
 
@@ -110,3 +127,56 @@ def test_version_flag(capsys):
     except SystemExit as e:
         assert e.code == 0
     assert "aislopfixer" in capsys.readouterr().out
+
+
+def test_min_confidence_out_of_range_rejected(capsys):
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main([".", "--check", "--min-confidence", "1.5"])
+    assert exc.value.code == 2
+    assert "0..1" in capsys.readouterr().err
+
+
+def test_fix_reports_what_it_fixed(tmp_path, capsys):
+    _slop_project(tmp_path)
+    main([str(tmp_path), "--check", "--fix"])
+    out = capsys.readouterr().out
+    assert "fixed [ai_leak.strong" in out
+    assert "removed `" in out
+    assert "backups: *.aislopfixer.bak" in out
+
+
+def test_fix_cascade_surfaces_unmasked_findings_same_run(tmp_path, capsys):
+    # Stripping the emoji turns `# 🎯 Conclusion` into a bare boilerplate
+    # heading — the same --fix run must both fix and re-report, not leave the
+    # discovery to the user's next invocation.
+    (tmp_path / "notes.md").write_text(
+        "# 🎯 Conclusion\n\nSome text.\n", encoding="utf-8"
+    )
+    code = main([str(tmp_path), "--check", "--fix"])
+    out = capsys.readouterr().out
+    assert "fixed [md.emoji_header]" in out
+    assert "md.boilerplate_section" in out
+    assert code == 0  # leftover is info-level; default fail-on is warning
+    assert (tmp_path / "notes.md").read_text(encoding="utf-8").startswith("# Conclusion")
+
+
+def test_json_lists_fixed_findings(tmp_path, capsys):
+    _slop_project(tmp_path)
+    main([str(tmp_path), "--json", "--fix"])
+    data = json.loads(capsys.readouterr().out)
+    assert data["auto_fixed"] == len(data["fixed"]) >= 1
+    entry = data["fixed"][0]
+    assert entry["rule_id"] and entry["file"] and entry["line"]
+
+
+def test_bom_file_line_one_is_scanned(tmp_path, capsys):
+    # BOM used to shift offsets so ^-anchored rules missed line 1 entirely.
+    (tmp_path / "x.js").write_bytes(
+        b"\xef\xbb\xbf<<<<<<< HEAD\na\n=======\nb\n>>>>>>> main\n"
+    )
+    code = main([str(tmp_path), "--check", "--no-store"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "x.js:1:1" in out and "merge.conflict_marker" in out

@@ -8,9 +8,12 @@ Keeping the sequence here means it cannot drift between the two.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
+from pathlib import Path
 
 from .config import Config
+from .engine.context import code_masks, prose_regions
 from .engine.models import Finding, SourceFile
 from .engine.runner import run_cross_rules, run_file_rules
 from .engine.scoring import reset_and_corroborate
@@ -52,22 +55,66 @@ def scan_project(
     def keep(fs: list[Finding]) -> list[Finding]:
         return [f for f in fs if not cfg.rule_disabled(f.rule_id)]
 
-    for sf in iter_files(path):
-        if cfg.path_ignored(sf.rel_path):
-            continue
-        file_findings = keep(run_file_rules(sf))
+    try:
+        for sf in iter_files(path):
+            if cfg.path_ignored(sf.rel_path):
+                continue
+            file_findings = keep(run_file_rules(sf))
+            if store is not None:
+                file_findings = store.filter(file_findings)
+            files.append(sf)
+            findings.extend(file_findings)
+            if on_file is not None:
+                on_file(sf, file_findings)
+        if on_cross_start is not None:
+            on_cross_start()
+        cross = keep(run_cross_rules(files))
         if store is not None:
-            file_findings = store.filter(file_findings)
-        files.append(sf)
-        findings.extend(file_findings)
-        if on_file is not None:
-            on_file(sf, file_findings)
-    if on_cross_start is not None:
-        on_cross_start()
-    cross = keep(run_cross_rules(files))
-    if store is not None:
-        cross = store.filter(cross)
-    findings.extend(cross)
+            cross = store.filter(cross)
+        findings.extend(cross)
+    finally:
+        # The lexer/prose caches key on full file texts — clearing here frees
+        # up to 64 retained file bodies once the scan no longer needs them.
+        code_masks.cache_clear()
+        prose_regions.cache_clear()
+    reset_and_corroborate(findings)
+    demote_noisy(findings, noisy)
+    return findings
+
+
+def rescan_paths(
+    root: str,
+    rel_paths: set[str],
+    store: Store | None = None,
+    config: Config | None = None,
+) -> list[Finding]:
+    """Re-run the *file* rules on a few just-edited files.
+
+    Used after applying automatic fixes: a fix can surface a finding that was
+    masked by the slop it removed (strip ``## 🎯 Conclusion``'s emoji and the
+    bare boilerplate heading appears). Same filtering/scoring as a full scan;
+    cross-file rules are skipped — edits do not add imports or duplicates.
+    """
+    cfg = config if config is not None else Config.load(root)
+    noisy = store.noisy_rules() if store is not None else set()
+    findings: list[Finding] = []
+    try:
+        for rel in rel_paths:
+            if cfg.path_ignored(rel):
+                continue
+            ap = os.path.join(root, rel)
+            try:
+                text = Path(ap).read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError):
+                continue
+            sf = SourceFile(abs_path=ap, rel_path=rel, text=text)
+            fs = [f for f in run_file_rules(sf) if not cfg.rule_disabled(f.rule_id)]
+            if store is not None:
+                fs = store.filter(fs)
+            findings.extend(fs)
+    finally:
+        code_masks.cache_clear()
+        prose_regions.cache_clear()
     reset_and_corroborate(findings)
     demote_noisy(findings, noisy)
     return findings

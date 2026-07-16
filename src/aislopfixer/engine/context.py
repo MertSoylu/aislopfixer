@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+from functools import lru_cache
 
 # --------------------------------------------------------------------- kinds
 _HTML_LIKE = {".html", ".htm", ".vue", ".svelte", ".astro", ".xml"}
@@ -44,8 +45,70 @@ _JS_EXT = {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".vue", ".svelte", ".as
 _CSS_EXT = {".css"}
 
 
+# A `/` starts a regex literal (not division) only in expression position:
+# after one of these characters, after `=>`, after a keyword, or at the start
+# of the input. After an identifier/number/`)`/`]` it is division. `<`/`>` are
+# deliberately absent — JSX closing tags (`</div>`) would misread as regexes.
+_REGEX_PRECEDERS = frozenset("(,=:[!&|?{};+-*%~^")
+_REGEX_KEYWORDS = frozenset({
+    "return", "typeof", "case", "in", "of", "new", "delete", "void",
+    "instanceof", "do", "else", "yield", "await", "throw",
+})
+
+
+def _regex_expr_position(text: str, i: int) -> bool:
+    """True when a ``/`` at offset ``i`` sits where an expression may start."""
+    k = i - 1
+    while k >= 0 and text[k] in " \t\r\n":
+        k -= 1
+    if k < 0:
+        return True
+    p = text[k]
+    if p in _REGEX_PRECEDERS:
+        return True
+    if p == ">" and k >= 1 and text[k - 1] == "=":  # arrow: x => /re/
+        return True
+    if p.isalnum() or p in "_$":
+        w = k
+        while w >= 0 and (text[w].isalnum() or text[w] in "_$"):
+            w -= 1
+        return text[w + 1: k + 1] in _REGEX_KEYWORDS
+    return False
+
+
+def _scan_regex(text: str, i: int, n: int) -> int | None:
+    """End offset (past flags) of a regex literal opening at ``i``, or None.
+
+    Honors escapes and ``[…]`` char classes (an unescaped ``/`` inside a class
+    does not terminate). A newline before the closing ``/`` means it was not a
+    regex after all (division) — return None and let the caller fall through.
+    """
+    j = i + 1
+    in_class = False
+    while j < n:
+        cj = text[j]
+        if cj == "\\":
+            j += 2
+            continue
+        if cj == "\n":
+            return None
+        if in_class:
+            if cj == "]":
+                in_class = False
+        elif cj == "[":
+            in_class = True
+        elif cj == "/":
+            j += 1
+            while j < n and text[j].isalpha():
+                j += 1  # flags
+            return j
+        j += 1
+    return None
+
+
 def _lex(text: str, *, line_comment: str | None,
          block: tuple[str, str], templates: bool,
+         regexes: bool = False,
          start: int = 0, end: int | None = None,
          stop_at_brace_depth: int | None = None,
          ) -> tuple[list[tuple[int, int]], list[tuple[int, int]], int]:
@@ -119,6 +182,7 @@ def _lex(text: str, *, line_comment: str | None,
                         line_comment=line_comment,
                         block=block,
                         templates=True,
+                        regexes=regexes,
                         start=i + 2,
                         end=n,
                         stop_at_brace_depth=0,
@@ -130,6 +194,14 @@ def _lex(text: str, *, line_comment: str | None,
                 # Unclosed template — mark remainder as string.
                 strings.append((seg, n))
             continue
+        if regexes and c == "/" and _regex_expr_position(text, i):
+            # Regex literal: its `//`, quotes and braces are not code. Mark it
+            # as a string-like span so exclude_strings drops matches inside it.
+            j = _scan_regex(text, i, n)
+            if j is not None:
+                strings.append((i, j))
+                i = j
+                continue
         if stop_at_brace_depth is not None:
             if c == "{":
                 brace_depth += 1
@@ -146,11 +218,17 @@ def _lex(text: str, *, line_comment: str | None,
     return strings, comments, i
 
 
+@lru_cache(maxsize=64)
 def code_masks(text: str, ext: str) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
-    """``(string_spans, comment_spans)`` for a source file; ``([], [])`` if unknown."""
+    """``(string_spans, comment_spans)`` for a source file; ``([], [])`` if unknown.
+
+    Cached per ``(text, ext)`` — several rules mask the same file, so the lex
+    runs once. Treat the returned lists as immutable.
+    """
     ext = ext.lower()
     if ext in _JS_EXT:
-        s, c, _ = _lex(text, line_comment="//", block=("/*", "*/"), templates=True)
+        s, c, _ = _lex(text, line_comment="//", block=("/*", "*/"),
+                       templates=True, regexes=True)
         return s, c
     if ext in _CSS_EXT:
         s, c, _ = _lex(text, line_comment=None, block=("/*", "*/"), templates=False)
@@ -291,8 +369,12 @@ def _md_text_spans(text: str) -> list[tuple[int, int]]:
     return _gaps(blocked, len(text))
 
 
+@lru_cache(maxsize=64)
 def prose_regions(text: str, kind: str, ext: str | None = None) -> list[tuple[int, int]]:
     """Absolute spans of human-visible prose for the given file kind.
+
+    Cached per ``(text, kind, ext)`` — several rules mine the same file's
+    prose. Treat the returned list as immutable.
 
     For code files the *comments* are the human-written prose — an AI tell like
     "as an AI language model" or a wall of buzzwords leaks into a JSDoc block

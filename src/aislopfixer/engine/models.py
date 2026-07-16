@@ -73,6 +73,7 @@ class Finding:
     prompt_label: str | None = None
     status: Status = Status.OPEN
     confidence: float = 0.0  # 0..1, backfilled by the runner via engine.scoring
+    pinned: bool = False     # rule fixed the confidence itself; scoring won't touch it
 
     @property
     def key(self) -> str:

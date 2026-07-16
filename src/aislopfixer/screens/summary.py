@@ -16,6 +16,8 @@ from ..engine.scoring import project_score_from_findings
 from ..theme import (
     ACCENT,
     BAD,
+    BG,
+    BORDER_MID,
     CATEGORY_COLORS,
     CATEGORY_ICON,
     DIM,
@@ -23,6 +25,7 @@ from ..theme import (
     OK,
     SEVERITY_COLORS,
     SEVERITY_ICON,
+    TEXT,
     WARN,
 )
 from ..widgets import CountUp
@@ -58,7 +61,7 @@ class CatBar(Static):
         t.append(f"{CATEGORY_ICON[self._cat]} ", style=color)
         t.append(f"{self._cat.value:<14}", style=color)
         t.append("█" * filled, style=color)
-        t.append("░" * (_BAR_WIDTH - filled), style="#2a2f3a")
+        t.append("░" * (_BAR_WIDTH - filled), style=BORDER_MID)
         t.append(f"  {self._fixed}/{self._found}", style=DIM)
         return t
 
@@ -179,8 +182,8 @@ class SummaryScreen(AdaptiveScreen):
         t = Text(justify="center")
 
         def opt(k: str, label: str, last: bool = False) -> None:
-            t.append(f" {k} ", style=f"bold #0b0e14 on {ACCENT}")
-            t.append(f" {label}", style="#cdd6f4")
+            t.append(f" {k} ", style=f"bold {BG} on {ACCENT}")
+            t.append(f" {label}", style=TEXT)
             if not last:
                 t.append("        ", style=DIM)
 

@@ -16,8 +16,15 @@ This module flags its strongest, least-ambiguous tells:
 * **glassmorphism** — ``backdrop-blur`` + translucent white/black surface.
 * **landing kit** — composite of classic AI-landing signals (Inter font, soft
   2xl radius, soft shadow, feature triad grid, dual CTAs, "How it works",
-  glass, purple accent). Fires only when ≥3 distinct families co-occur in one
-  file — single-signal pages (Inter alone, one ``rounded-2xl``) stay quiet.
+  glass, purple accent, "Introducing" badge pill, stat strip, pricing badge,
+  section-scaffold comments). Fires only when ≥3 distinct families co-occur in
+  one file *and* at least one of them is a strong, AI-correlated family (see
+  ``_KIT_STRONG``) — single-signal pages and generic human Tailwind marketing
+  (radii + shadows + CTAs alone) stay quiet.
+
+The page-*structure* recipe rules (fake metrics, pricing triad, section
+recipe, fake logo cloud, blob glow) live in :mod:`landing_tells`; marketing
+copy templates live in :mod:`copy_slop`.
 
 Everything here is a stylistic authorship tell, not broken code — severities
 stay at WARNING/INFO and the category has its own DESIGN bucket. Most fixes
@@ -32,6 +39,7 @@ from ..models import Category, Finding, Fixability, Severity, SourceFile
 from ..pattern_rule import Pattern, PatternRule
 from ..registry import file_rule
 from ..util import build_finding
+from .landing_tells import PER_MONTH, PRICE_BADGE, metric_spans, section_comments
 
 _I = re.IGNORECASE
 
@@ -171,8 +179,24 @@ _KIT_LOGO_CLOUD = re.compile(
     r"leaders|companies\s+(?:that\s+)?trust\s+us)\b",
     _I,
 )
+# "✨ Announcing …" / "Introducing …" pill above the hero headline. Anchored to
+# a text-node start (after '>' or line start) so attribute values never match.
+_KIT_BADGE = re.compile(
+    r"(?:^|>)\s*(?:[✨🎉🚀]\s*)?(?:announcing|introducing)\b", _I | re.M
+)
 
-_LANDING_KIT_MIN = 3  # distinct signal families required
+_LANDING_KIT_MIN = 3   # distinct signal families required
+_KIT_STAT_MIN = 2      # metric hits before the stat strip counts as a family
+_KIT_SECTION_MIN = 2   # distinct scaffold comments before they count
+
+# Weak families are everyday human Tailwind/marketing (soft radii, shadows,
+# CTAs, a 3-col grid, "How it works", Inter); strong ones correlate with AI
+# authorship on their own. The kit needs ≥1 strong family in the mix so a
+# generic human marketing page never trips it on weak signals alone.
+_KIT_STRONG = frozenset({
+    "purple_accent", "badge_pill", "glass", "stat_strip",
+    "pricing", "section_comments", "logo_cloud",
+})
 
 
 @file_rule
@@ -324,43 +348,57 @@ class DesignSlopRule(PatternRule):
         ]
 
     def _landing_kit(self, sf: SourceFile) -> list[Finding]:
-        """Composite AI-landing kit — only fires when ≥3 families co-occur."""
+        """Composite AI-landing kit — ≥3 families, at least one strong."""
         text = sf.text
-        signals: list[tuple[str, re.Match]] = []
+        signals: list[tuple[str, tuple[int, int]]] = []
 
         def add(name: str, rx: re.Pattern) -> None:
             m = rx.search(text)
             if m is not None:
-                signals.append((name, m))
+                signals.append((name, m.span()))
 
         add("inter_font", _KIT_INTER)
         add("purple_accent", _KIT_PURPLE_ACCENT)
         # Density gates for radius/shadow — a single utility is normal UI.
         radius_hits = list(_KIT_SOFT_RADIUS.finditer(text))
         if len(radius_hits) >= 2:
-            signals.append(("soft_radius", radius_hits[0]))
+            signals.append(("soft_radius", radius_hits[0].span()))
         shadow_hits = list(_KIT_SOFT_SHADOW.finditer(text))
         if len(shadow_hits) >= 2:
-            signals.append(("soft_shadow", shadow_hits[0]))
+            signals.append(("soft_shadow", shadow_hits[0].span()))
         add("feature_grid", _KIT_FEATURE_GRID)
         add("how_it_works", _KIT_HOW_IT_WORKS)
         add("logo_cloud", _KIT_LOGO_CLOUD)
+        add("badge_pill", _KIT_BADGE)
         if _GLASS.search(text) and _GLASS_SURFACE.search(text):
             m = _GLASS.search(text)
             assert m is not None
-            signals.append(("glass", m))
+            signals.append(("glass", m.span()))
         # Dual CTA: primary + secondary both present.
         cta1 = _KIT_DUAL_CTA.search(text)
         cta2 = _KIT_SECONDARY_CTA.search(text)
         if cta1 and cta2:
-            signals.append(("dual_cta", cta1))
+            signals.append(("dual_cta", cta1.span()))
+        # Recipe families shared with landing_tells (which owns the stricter
+        # standalone rules); looser thresholds here since the kit needs ≥3.
+        stats = metric_spans(text)
+        if len(stats) >= _KIT_STAT_MIN:
+            signals.append(("stat_strip", stats[0]))
+        badge = PRICE_BADGE.search(text)
+        if badge is not None and PER_MONTH.search(text) is not None:
+            signals.append(("pricing", badge.span()))
+        sections = section_comments(text)
+        if len({n for n, _ in sections}) >= _KIT_SECTION_MIN:
+            signals.append(("section_comments", sections[0][1]))
 
         if len(signals) < _LANDING_KIT_MIN:
+            return []
+        if not any(name in _KIT_STRONG for name, _ in signals):
             return []
 
         names = [n for n, _ in signals]
         # Anchor on the earliest match so the tree points at real source.
-        anchor = min((m for _, m in signals), key=lambda m: m.start())
+        anchor = min((span for _, span in signals), key=lambda s: s[0])
         return [
             build_finding(
                 sf,
@@ -371,8 +409,8 @@ class DesignSlopRule(PatternRule):
                     f"AI landing-page kit ({len(signals)} tells: "
                     f"{', '.join(names)})"
                 ),
-                start=anchor.start(),
-                end=anchor.end(),
+                start=anchor[0],
+                end=anchor[1],
                 fixability=Fixability.MANUAL,
                 suggested_fix=(
                     "Replace the stock kit: real brand font/colors, unique "

@@ -33,8 +33,12 @@ DIRNAME = ".aislopfixer"
 LEDGER = "ledger.json"
 REPORT = "report.md"
 
-# Statuses whose findings must NOT come back on the next scan.
-_SUPPRESS = {Status.FIXED.value, Status.ANNOTATED.value, Status.IGNORED.value}
+# Statuses whose findings must NOT come back on the next scan. FIXED is
+# deliberately absent: a fix removes the text from that spot, so a later match
+# of the same signature is a different occurrence (or a revert) that deserves
+# a fresh report. ANNOTATED text stays in the file and IGNORED is the user's
+# call — both suppress.
+_SUPPRESS = {Status.ANNOTATED.value, Status.IGNORED.value}
 
 # A rule dismissed this many times in a project is treated as noisy there.
 NOISY_THRESHOLD = 3
@@ -169,7 +173,16 @@ class Store:
         if target:
             lines.append(f"- **Target:** `{target}`")
         lines.append(f"- **Last scan:** {_now()}")
-        lines.append(f"- **Slop score:** {round(project_score_from_findings(findings) * 100)}/100")
+        # Score what is still *live* (open/skipped) — a report that keeps the
+        # scan-time score after fixes claims the work changed nothing. The
+        # scan-time number stays visible as the "was" reference.
+        live = [f for f in findings if f.status in (Status.OPEN, Status.SKIPPED)]
+        now_score = round(project_score_from_findings(live) * 100)
+        was_score = round(project_score_from_findings(findings) * 100)
+        score_line = f"- **Slop score:** {now_score}/100"
+        if was_score != now_score:
+            score_line += f"  _(was {was_score}/100 at scan time)_"
+        lines.append(score_line)
         lines.append(
             f"- **Found:** {n}  ·  **Resolved:** {len(fixed)}  ·  "
             f"**Not slop:** {len(ignored)}  ·  **Skipped:** {len(skipped)}  ·  "

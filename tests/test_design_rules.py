@@ -239,3 +239,33 @@ def test_landing_kit_two_signals_below_threshold():
         )
     )
     assert "design.landing_kit" not in ids(f)
+
+
+def test_landing_kit_weak_signals_alone_quiet():
+    """Generic Tailwind marketing (radius+shadow+CTAs+grid+how-it-works) is
+    human-plausible — without one strong AI signal the kit must stay quiet."""
+    text = """
+<section>
+  <a href="/signup">Get Started Free</a>
+  <a href="/docs">Learn More</a>
+</section>
+<h2>How it works</h2>
+<section class="grid grid-cols-3 gap-8">
+  <div class="rounded-2xl shadow-xl p-6">A</div>
+  <div class="rounded-2xl shadow-xl p-6">B</div>
+</section>
+"""
+    f = run_file_rules(sf(text))
+    assert "design.landing_kit" not in ids(f)
+
+
+def test_landing_kit_weak_plus_one_strong_fires():
+    """Two weak families plus a strong one (purple accent) crosses the bar."""
+    text = (
+        '<a href="/go">Get started free</a> <a href="/docs">Learn more</a>\n'
+        '<div class="rounded-2xl shadow-xl"></div>\n'
+        '<div class="rounded-2xl shadow-xl"></div>\n'
+        '<h1 class="text-purple-600">Ship</h1>\n'
+    )
+    f = run_file_rules(sf(text))
+    assert "design.landing_kit" in ids(f)

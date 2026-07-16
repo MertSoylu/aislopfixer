@@ -41,7 +41,7 @@ def test_prompt_contains_location_source_and_guidance():
     assert "`src/db.js:12:5` — security.sql_interpolation" in out
     assert "   12 | const q = `SELECT * FROM users WHERE id = ${id}`;" in out
     assert "Use parameterized queries" in out
-    assert "aislopfixer ./site --check" in out
+    assert "aislopfixer \"./site\" --check" in out
 
 
 def test_prompt_skips_non_open_findings():
@@ -88,6 +88,21 @@ def test_prompt_clips_long_snippets():
     assert "line7" in out
     assert "line8" not in out
     assert "| …" in out
+
+
+def test_prompt_fence_survives_backticks_in_snippet():
+    # A markdown_fence finding carries ``` in its snippet — a fixed three-
+    # backtick fence would end early and break the brief's rendering.
+    f = _finding(
+        rule_id="codegen.markdown_fence",
+        file="README.mdx",
+        snippet="```python\nprint('hi')\n```",
+        matched_text="```python",
+    )
+    out = render_fix_prompt([f])
+    lines = out.splitlines()
+    fences = [ln for ln in lines if ln and set(ln) == {"`"}]
+    assert fences and all(len(ln) >= 4 for ln in fences)
 
 
 # --------------------------------------------------------------- headless
@@ -193,3 +208,19 @@ async def test_export_modal_escape_writes_nothing(tmp_path):
         await pilot.pause(0.2)
         assert app.screen.__class__.__name__ == "ResultsScreen"
     assert not (tmp_path / ".aislopfixer" / "fix-prompt.md").exists()
+
+
+def test_prompt_doc_level_finding_shows_scope_not_line_one():
+    # buzzword.density anchors at offset 0 with no span — quoting line 1
+    # (`<!DOCTYPE html>`) would point the agent at innocent code.
+    f = _finding(
+        rule_id="buzzword.density",
+        category=Category.BUZZWORD,
+        message="High buzzword density",
+        line=1, col=1, start=0, end=0,
+        snippet="<!DOCTYPE html>", matched_text="",
+        suggested_fix="Rewrite the copy",
+    )
+    out = render_fix_prompt([f])
+    assert "scope: the whole file" in out
+    assert "<!DOCTYPE html>" not in out

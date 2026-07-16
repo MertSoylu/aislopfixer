@@ -8,18 +8,23 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.events import Key
 from textual.message import Message
 from textual.widgets import ProgressBar, Static
 
 from .base import AdaptiveScreen
+from ..config import Config
 from ..engine.models import Category, Finding, SourceFile
 from ..pipeline import scan_project
 from ..scanner import count_eligible
-from ..theme import ACCENT, CATEGORY_COLORS, CATEGORY_ICON, DIM, OK
+from ..theme import (
+    ACCENT, BAD, BG, CATEGORY_COLORS, CATEGORY_ICON, DIM, FAINT, OK, TEXT, WARN,
+)
 from ..widgets import CountUp, ScanPulse, Spinner
 
-_TEXT = "#cdd6f4"
-_FAINT = "#5b647a"
+
+class _ScanCancelled(Exception):
+    """Raised inside the worker thread to abandon a user-cancelled scan."""
 
 
 class SetTotal(Message):
@@ -64,6 +69,8 @@ class ScanScreen(AdaptiveScreen):
         self._done = 0
         self._found = 0
         self._t0 = 0.0
+        self._failed = False
+        self._cancelled = False  # set on Esc; the worker checks it per file
         self._counts: dict[Category, int] = {c: 0 for c in Category}
 
     def compose(self) -> ComposeResult:
@@ -84,6 +91,10 @@ class ScanScreen(AdaptiveScreen):
                         id=f"cat-{cat.name}",
                         classes="cat-counter",
                     )
+            yield Static(
+                Text("esc to cancel", style=FAINT, justify="center"),
+                id="scan-hint",
+            )
 
     def _path_line(self) -> Text:
         t = Text(justify="center", no_wrap=True, overflow="ellipsis")
@@ -93,18 +104,18 @@ class ScanScreen(AdaptiveScreen):
     def _count_line(self) -> Text:
         t = Text(justify="center")
         if not self._total:
-            t.append("preparing…", style=_FAINT)
+            t.append("preparing…", style=FAINT)
             return t
         pct = round(self._done / self._total * 100)
         t.append(f"{self._done}", style=f"bold {ACCENT}")
         t.append(f" / {self._total} files", style=DIM)
-        t.append("   ·   ", style=_FAINT)
-        t.append(f"{pct}%", style=_TEXT)
-        t.append("   ·   ", style=_FAINT)
-        found_color = "#fbbf24" if self._found else DIM
+        t.append("   ·   ", style=FAINT)
+        t.append(f"{pct}%", style=TEXT)
+        t.append("   ·   ", style=FAINT)
+        found_color = WARN if self._found else DIM
         t.append(f"{self._found} found", style=found_color)
         if self._t0:
-            t.append("   ·   ", style=_FAINT)
+            t.append("   ·   ", style=FAINT)
             t.append(f"{time.monotonic() - self._t0:.0f}s", style=DIM)
         return t
 
@@ -125,12 +136,17 @@ class ScanScreen(AdaptiveScreen):
     @work(thread=True)
     def _scan(self) -> None:
         try:
-            total = count_eligible(self._path)
+            config = Config.load(self._path)
+            # Pass the config so ignored paths are not counted — otherwise the
+            # progress total is inflated and the bar never reaches 100%.
+            total = count_eligible(self._path, config)
             self.post_message(SetTotal(total))
             # spread tiny scans over ~1.2s so the animation is visible; ~0 for big repos
             delay = min(0.04, 1.2 / total) if total else 0.0
 
             def on_file(sf: SourceFile, file_findings: list[Finding]) -> None:
+                if self._cancelled:
+                    raise _ScanCancelled()
                 self.post_message(FileDone(sf.rel_path, file_findings))
                 if delay:
                     time.sleep(delay)
@@ -140,24 +156,31 @@ class ScanScreen(AdaptiveScreen):
                 store=getattr(self.app, "store", None),
                 on_file=on_file,
                 on_cross_start=lambda: self.post_message(CrossStart()),
+                config=config,
             )
             self.post_message(Done(findings))
+        except _ScanCancelled:
+            pass  # user backed out — the screen is already gone
         except Exception as exc:  # noqa: BLE0001 — surface any engine failure to the UI
             self.post_message(Failed(f"{type(exc).__name__}: {exc}"))
 
     def on_set_total(self, message: SetTotal) -> None:
+        if self._cancelled:
+            return
         self._total = message.total
         spinner = self.query_one("#scan-spinner", Spinner)
         if message.total == 0:
             spinner.set_label("No scannable files found.")
             self.query_one("#scan-current", Static).update(
-                Text("This folder has nothing to scan.", style=_FAINT)
+                Text("This folder has nothing to scan.", style=FAINT)
             )
         else:
             spinner.set_label(f"Scanning {message.total} files…")
         self.query_one("#scan-count", Static).update(self._count_line())
 
     def on_file_done(self, message: FileDone) -> None:
+        if self._cancelled:
+            return
         self._done += 1
         if self._total:
             pct = self._done / self._total * 100
@@ -176,13 +199,17 @@ class ScanScreen(AdaptiveScreen):
             self.query_one(f"#cat-{cat.name}", CountUp).set_target(self._counts[cat])
 
     def on_cross_start(self, message: CrossStart) -> None:
+        if self._cancelled:
+            return
         if self._total:
             self.query_one("#scan-spinner", Spinner).set_label("Analyzing cross-file duplicates…")
             self.query_one("#scan-current", Static).update(
-                Text("› comparing content across files", style=_FAINT)
+                Text("› comparing content across files", style=FAINT)
             )
 
     def on_done(self, message: Done) -> None:
+        if self._cancelled:
+            return
         self._clock.stop()
         self._found = len(message.findings)
         self.query_one("#scan-count", Static).update(self._count_line())
@@ -192,23 +219,48 @@ class ScanScreen(AdaptiveScreen):
         spinner.stop()
         done = Text()
         done.append("✓ ", style=f"bold {OK}")
-        done.append(f"Scan complete — {total} issue(s) found", style=_TEXT)
+        done.append(f"Scan complete — {total} issue(s) found", style=TEXT)
         spinner.set_label(done)
         self.query_one("#scan-current", Static).update(
-            Text("opening report…", style=_FAINT)
+            Text("opening report…", style=FAINT)
         )
-        self.set_timer(0.8, lambda: self.app.show_results(message.findings))
+        self.set_timer(0.8, lambda: self.app.show_results(message.findings, files_scanned=self._total))
 
     def on_failed(self, message: Failed) -> None:
+        """Stay here and say so — never dress a failed scan up as a clean one."""
+        if self._cancelled:
+            return
         self._clock.stop()
+        self._failed = True
         spinner = self.query_one("#scan-spinner", Spinner)
         spinner.stop()
         err = Text()
-        err.append("✗ ", style="bold #f38ba8")
-        err.append("Scan failed", style=_TEXT)
+        err.append("✗ ", style=f"bold {BAD}")
+        err.append("Scan failed", style=TEXT)
         spinner.set_label(err)
         detail = Text(no_wrap=True, overflow="ellipsis")
-        detail.append(message.error, style="#f38ba8")
+        detail.append(message.error, style=BAD)
         self.query_one("#scan-current", Static).update(detail)
-        # let the user out with whatever was collected (empty) rather than hang
-        self.set_timer(2.0, lambda: self.app.show_results([]))
+        hint = Text(justify="center")
+        hint.append(" r ", style=f"bold {BG} on {ACCENT}")
+        hint.append(" retry    ", style=DIM)
+        hint.append(" n ", style=f"bold {BG} on {ACCENT}")
+        hint.append(" new folder    ", style=DIM)
+        hint.append(" q ", style=f"bold {BG} on {ACCENT}")
+        hint.append(" quit", style=DIM)
+        self.query_one("#scan-count", Static).update(hint)
+
+    def on_key(self, event: Key) -> None:
+        if not self._failed:
+            if event.key == "escape" and not self._cancelled:
+                # Cooperative cancel: the worker checks the flag per file.
+                self._cancelled = True
+                self._clock.stop()
+                self.app.choose_new_folder()
+            return
+        if event.key == "r":
+            self.app.rescan()
+        elif event.key == "n":
+            self.app.choose_new_folder()
+        elif event.key in ("q", "escape"):
+            self.app.exit()

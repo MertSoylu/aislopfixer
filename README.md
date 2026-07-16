@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Current version: 0.4.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer) / [PyPI](https://pypi.org/project/aislopfixer/)
+**Current version: 0.5.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer) / [PyPI](https://pypi.org/project/aislopfixer/)
 
 AI-generated code ships with a recognizable class of defects — and they are not the old "As an AI language model…" giveaways. Today's models hallucinate package imports that break your build (and invite [slopsquatting](https://en.wikipedia.org/wiki/Slopsquatting) attacks), wrap everything in `try/catch` and silently swallow the error, store JWTs in `localStorage`, build SQL with template literals, leave `// ... rest of the code ...` elision markers behind, and coat every landing page in "It's not just a tool — it's a game changer" prose.
 
@@ -45,13 +45,14 @@ Only mistakes that **current-generation models still make** — trivial lint is 
 |----------|------|----------------|
 | 🧨 **Hallucinated imports** | `import x from 'pkg'` where `pkg` is in no `package.json` on the path to the root (monorepo-aware; Node built-ins, tsconfig `paths`, `@/`-style aliases all respected); named imports the target module demonstrably never exports; unused leftover imports | Build breaks; typo-squatted registry names are a supply-chain attack vector |
 | 🔓 **Security** | XSS sinks (`innerHTML`, `dangerouslySetInnerHTML`, `v-html`), SQL built by interpolation/concat, command injection, `eval`, disabled TLS validation, wildcard CORS, weak crypto, `Math.random()` secrets, hardcoded real keys (AWS/GitHub/OpenAI/Stripe/…, JWTs, PEM blocks, high-entropy literals), tokens in `localStorage`, `postMessage(…, '*')` | Roughly half of generated snippets carry a known weakness; these are the concrete, offline-detectable shapes |
-| 🕳️ **Swallowed errors** | `catch (e) {}` and `.catch(() => {})` — including comment-only bodies; log-only catches (`catch (e) { console.error(e) }`); catches that silently `return null`/`[]`/`{}` | The try/catch-everything habit makes failures vanish silently |
+| 🕳️ **Swallowed errors** | `catch (e) {}` and `.catch(() => {})` — a body holding only a comment (`catch { /* quota errors are fine */ }`) is treated as a documented decision and left alone; log-only catches (`catch (e) { console.error(e) }`); catches that silently `return null`/`[]`/`{}` | The try/catch-everything habit makes failures vanish silently |
 | ✂️ **Broken pastes** | Elision markers (`// ... existing code ...`), not-implemented stubs, `debugger;`, leftover ``` fences from chat, unresolved merge conflict markers | The file is literally incomplete or unparseable |
 | 🔑 **Placeholder secrets** | `YOUR_API_KEY_HERE`, `sk-xxxx…`, `password: "changeme"` | Fails at runtime and normalizes hardcoding credentials |
 | 🗑️ **Placeholders / dummy data** | lorem ipsum, `[Your Company Name]`, `example.com`, fake API endpoints (`api.yourdomain.com`), 555-phones, `href="#"`, placeholder images | Ships as-is embarrassingly often |
 | 💬 **AI chat residue** | "As an AI language model…", "Certainly! Here is…", "I hope this helps" | Copy-pasted chat answers in production copy |
 | 📢 **LLM prose tells** | "It's not just X — it's Y", "Whether you're … or …", "delve", "seamlessly", em-dash overuse, buzzword density, emoji-headed README sections, checkmark feature lists | The house style of machine marketing copy |
-| 🎨 **AI slop design** | The stock purple→pink hero gradient (Tailwind and raw CSS), invented social proof ("Trusted by 10,000+ developers"), emoji-decorated UI copy (🚀✨⚡ feature lists) | The instantly recognizable AI landing-page aesthetic |
+| 🗣️ **Template marketing copy** | Interchangeable SaaS microcopy ("No credit card required" + "Cancel anytime" + "Everything you need to…" — fires only when ≥2 co-occur), fabricated-testimonial phrasing ("completely transformed the way we work", "game-changer for our team") | Copy that could sit on any product's page — no product specificity |
+| 🎨 **AI slop design** | The stock purple→pink hero gradient (Tailwind and raw CSS), gradient-clipped hero text, glassmorphism, decorative glow blobs (`rounded-full` + `blur-3xl`), invented social proof ("Trusted by 10,000+ developers"), fake stat strips ("99.9% uptime · 24/7 support · 10k+ users"), fabricated big-brand logo clouds, the stock pricing triad ("Most Popular" + per-month + Enterprise), placeholder avatar hosts, emoji-decorated UI copy, `<!-- Hero Section -->`-style scaffold recipes, and a composite "landing kit" score across 13 signal families | The instantly recognizable AI landing-page dialect — flagged on combined signals, so one intentional gradient stays quiet |
 | 🖼️ **Image accessibility** | Missing or generic (`alt="image"`) alt text | The one a11y mistake generators still make |
 | 📋 **Cross-file duplicates** | The same (or lightly reworded) marketing paragraph pasted across pages; the same helper function re-emitted into several files instead of imported once | Word/token-shingle Jaccard clustering |
 | 💤 **Over-commenting** | Files where every other line is a `//` narration comment (directives like `eslint-disable` excluded) | The step-by-step-narrator habit of generated code |
@@ -81,10 +82,12 @@ Left: findings grouped by **category → file**, each file with a mini slop bar,
 | Key | Action |
 |-----|--------|
 | `f` | fix selected finding (auto, or prompts you for the value) |
+| `d` | preview the exact diff the fix would make |
 | `p` | fix **all** safe automatic findings at once |
 | `a` | annotate in source |
-| `s` | skip (re-surfaces next scan) |
-| `i` | not slop — remembered forever, never reported again |
+| `s` | skip (re-surfaces next scan) — on a category/file row: skip the whole branch |
+| `i` | not slop — remembered forever — on a category/file row: the whole branch |
+| `u` | undo the last fix/annotate (restores the file) |
 | `x` | export — fix brief / JSON / SARIF |
 | `1 2 3` / `0` | filter by severity / clear |
 | `c` | cycle the confidence floor (all → 45 → 60 → 75%) |
@@ -115,7 +118,7 @@ Slop score, severity breakdown, animated per-category fixed/found bars — plus 
 Everything you resolve or dismiss is remembered in `<project>/.aislopfixer/`:
 
 - **allowlist** — "not slop" verdicts, keyed by content so they survive edits and apply across files;
-- **ledger** — fixed/annotated findings never come back; skipped ones intentionally do;
+- **ledger** — annotated/dismissed findings never come back (fixed spots stay quiet naturally: the text is gone, and a re-match is a new occurrence); skipped ones intentionally do;
 - **noise demotion** — a rule you dismiss 3+ times gets its confidence halved in that project;
 - **report.md** — human-readable snapshot after each scan.
 
@@ -184,7 +187,7 @@ Every finding carries a confidence (0–1) from a per-rule table, falling back t
 
 ## Supported files
 
-`.html .htm .jsx .tsx .js .ts .mjs .cjs .vue .svelte .astro .md .mdx .css` — skips `node_modules`, build output, hidden dirs, repo-meta docs (README/LICENSE/CLAUDE/AGENTS…), files > 2 MB.
+`.html .htm .jsx .tsx .js .ts .mjs .cjs .vue .svelte .astro .md .mdx .css` — skips `node_modules`, build output, hidden dirs, repo-meta docs (README/LICENSE/CLAUDE/AGENTS…), files > 2 MB, and minified bundles (`*.min.js` or single-giant-line files).
 
 ## Architecture
 
@@ -203,9 +206,10 @@ src/aislopfixer/
 │   ├── runner.py     # run rules → dedupe → collapse → containment → corroborate
 │   ├── scoring.py    # confidence table, noisy-OR file score, project score
 │   ├── context.py    # prose regions + string/comment masking (the FP killer)
-│   └── rules/        # ai_leaks, placeholders, buzzwords, prose_tells, duplicates,
-│                     #   accessibility, codegen, design_slop, markdown_tells,
-│                     #   merge_conflicts, secrets, security, imports   (13 modules)
+│   └── rules/        # ai_leaks, placeholders, buzzwords, prose_tells, copy_slop,
+│                     #   duplicates, accessibility, codegen, design_slop,
+│                     #   landing_tells, markdown_tells, merge_conflicts,
+│                     #   secrets, security, imports   (15 modules)
 ├── screens/          # splash → path → scan → results → summary
 └── widgets/          # animations, counters, logo, stats
 ```

@@ -95,10 +95,12 @@ _DEBUG_LOG = re.compile(
     r"foo|bar|baz|aa+|xxx+|=+|-+|\*+|\?+)\s*\1|\d+)?\s*\)\s*;?\s*$"
 )
 
-# Empty catch block: whitespace and comments only. The try/catch-everything
-# habit of generated code, with the error silently swallowed — failures vanish.
+# Empty catch block: whitespace only. The try/catch-everything habit of
+# generated code, with the error silently swallowed — failures vanish. A body
+# holding a comment is exempt: `catch { /* quota errors are fine */ }` is a
+# documented decision (same convention eslint's no-empty applies).
 _EMPTY_CATCH = re.compile(
-    r"\bcatch\s*(?:\([^)]*\))?\s*\{(?:\s|//[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*\}"
+    r"\bcatch\s*(?:\([^)]*\))?\s*\{\s*\}"
     r"|\.catch\s*\(\s*(?:\([^)]*\)|[\w$]+)\s*=>\s*\{\s*\}\s*\)"
     r"|\.catch\s*\(\s*function\s*\([^)]*\)\s*\{\s*\}\s*\)"
 )
@@ -242,7 +244,7 @@ class CodeGenRule(PatternRule):
         Pattern(
             id="codegen.empty_catch",
             regex=_EMPTY_CATCH,
-            severity=Severity.WARNING,
+            severity=Severity.INFO,
             fixability=Fixability.MANUAL,
             message="Empty catch block — the error is silently swallowed",
             suggested_fix="Handle the error (report/rethrow) or remove the try/catch",

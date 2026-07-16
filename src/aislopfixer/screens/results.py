@@ -20,12 +20,14 @@ from textual.widgets.tree import TreeNode
 from .. import fixer
 from ..engine.models import Category, Finding, Fixability, Status
 from ..engine.scoring import file_score, project_score_from_findings
-from ..headless import AUTO_FIX_FLOOR  # bulk auto-fix skips findings below this
+from ..headless import AUTO_FIX_FLOOR, MAX_FIX_PASSES  # keep bulk fix in step with --fix
+from ..pipeline import rescan_paths
 from .base import AdaptiveScreen
-from ..screens.modal import ConfirmModal, ExportModal, HelpModal, PromptModal
+from ..screens.modal import ConfirmModal, DiffModal, ExportModal, HelpModal, PromptModal
 from ..theme import (
     ACCENT,
     BAD,
+    BG,
     BORDER,
     CATEGORY_COLORS,
     CATEGORY_ICON,
@@ -33,6 +35,7 @@ from ..theme import (
     FAINT,
     FIX_COLOR,
     FIX_ICON,
+    MUTED,
     OK,
     SEVERITY_COLORS,
     SEVERITY_ICON,
@@ -44,11 +47,14 @@ from ..theme import (
 _HELP_ROWS: list[tuple[str, str]] = [
     ("ACT ON A FINDING", ""),
     ("f", "Fix it (auto, or prompts you for the real value)"),
+    ("d", "Preview the exact diff the fix would make"),
     ("a", "Annotate it in the source (manual-review items)"),
     ("s", "Skip for now — it resurfaces on the next scan"),
     ("i", "Not slop — allowlists this token across the project"),
+    ("u", "Undo the last fix / annotate (restores the file)"),
     ("BULK & EXPORT", ""),
     ("p", "Apply every high-confidence automatic fix at once"),
+    ("s i", "On a category/file row: skip / not-slop the whole branch"),
     ("x", "Export: AI fix brief / JSON / SARIF (into .aislopfixer/)"),
     ("VIEW & FILTER", ""),
     ("1 2 3", "Show only errors / warnings / info (again to clear)"),
@@ -68,9 +74,11 @@ class ResultsScreen(AdaptiveScreen):
 
     BINDINGS = [
         Binding("f", "fix", "Fix"),
+        Binding("d", "diff", "Diff"),
         Binding("s", "skip", "Skip"),
         Binding("a", "annotate", "Annotate"),
         Binding("i", "ignore", "Not slop"),
+        Binding("u", "undo", "Undo", show=False),
         Binding("p", "fix_auto", "Fix all auto"),
         Binding("x", "export", "AI fix brief"),
         Binding("c", "conf_filter", "Confidence floor", show=False),
@@ -94,6 +102,9 @@ class ResultsScreen(AdaptiveScreen):
         self._sev: str | None = None      # severity filter: "error"/"warning"/"info"
         self._hide_handled = False
         self._conf = 0.0                  # confidence floor (mirrors --min-confidence)
+        # LIFO of file-mutating actions; each entry restores file contents and
+        # finding statuses exactly as they were before that action.
+        self._undo: list[dict] = []
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -151,7 +162,7 @@ class ResultsScreen(AdaptiveScreen):
             return t
         t.append("✨ ", style=ACCENT)
         t.append(f"{n} finding(s) need judgement — press ", style=DIM)
-        t.append("x", style=f"bold #0b0e14 on {ACCENT}")
+        t.append("x", style=f"bold {BG} on {ACCENT}")
         t.append(" for an AI fix brief ", style=DIM)
         t.append("(a ready prompt for Claude Code / Cursor / Copilot)", style=FAINT)
         return t
@@ -166,8 +177,20 @@ class ResultsScreen(AdaptiveScreen):
 
     def _clean_banner(self) -> Text:
         t = Text(justify="center")
-        t.append("\n✦  NO SLOP DETECTED  ✦\n\n", style=f"bold {OK}")
-        t.append("This project came back clean.\n\n", style=TEXT)
+        scanned = getattr(self.app, "files_scanned", None)
+        if scanned == 0:
+            # An empty folder is not a clean project — don't claim it is.
+            t.append("\n◇  NOTHING TO SCAN  ◇\n\n", style=f"bold {WARN}")
+            t.append(
+                "No scannable web files here (html, js/ts, css, md, …).\n\n",
+                style=TEXT,
+            )
+        else:
+            t.append("\n✦  NO SLOP DETECTED  ✦\n\n", style=f"bold {OK}")
+            if scanned:
+                t.append(f"{scanned} file(s) scanned — this project came back clean.\n\n", style=TEXT)
+            else:
+                t.append("This project came back clean.\n\n", style=TEXT)
         t.append("Press ", style=DIM)
         t.append("q", style=f"bold {ACCENT}")
         t.append(" for the summary.", style=DIM)
@@ -228,6 +251,7 @@ class ResultsScreen(AdaptiveScreen):
         for f in visible:
             by_cat[f.category][f.file].append(f)
 
+        first_leaf: TreeNode | None = None
         for cat in Category:
             files = by_cat.get(cat)
             if not files:
@@ -249,23 +273,36 @@ class ResultsScreen(AdaptiveScreen):
                 for f in items:
                     leaf = file_node.add_leaf(self._leaf_label(f), data=f)
                     self._leaf_nodes[f.key] = leaf
+                    if first_leaf is None:
+                        first_leaf = leaf
 
         detail.update(self._detail(visible[0]))
+        if first_leaf is not None:
+            # Start with a finding under the cursor — otherwise nothing is
+            # selected and the first f/d/s/i press silently does nothing.
+            # Deferred: node line numbers exist only after the next refresh.
+            self.call_after_refresh(tree.move_cursor, first_leaf)
 
     def _empty_filter_note(self) -> Text:
+        """Offer a way out for each *active* filter — never a key that does nothing."""
+        outs: list[tuple[str, str]] = []
+        if self._sev is not None:
+            outs.append(("0", "to clear the severity filter"))
+        if self._hide_handled:
+            outs.append(("h", "to show handled items"))
+        if self._conf:
+            outs.append(("c", "to drop the confidence floor"))
         t = Text()
         t.append("No findings match this view.\n\n", style=TEXT)
+        if not outs:  # no filter active — the tree really is empty
+            t.append("Nothing to show here.", style=DIM)
+            return t
         t.append("Press ", style=DIM)
-        t.append(" 0 ", style=f"bold #0b0e14 on {ACCENT}")
-        t.append(" to clear the severity filter", style=DIM)
-        if self._hide_handled:
-            t.append(" or ", style=DIM)
-            t.append(" h ", style=f"bold #0b0e14 on {ACCENT}")
-            t.append(" to show handled items", style=DIM)
-        if self._conf:
-            t.append(" or ", style=DIM)
-            t.append(" c ", style=f"bold #0b0e14 on {ACCENT}")
-            t.append(" to drop the confidence floor", style=DIM)
+        for i, (key, what) in enumerate(outs):
+            if i:
+                t.append(" or ", style=DIM)
+            t.append(f" {key} ", style=f"bold {BG} on {ACCENT}")
+            t.append(f" {what}", style=DIM)
         t.append(".", style=DIM)
         return t
 
@@ -343,15 +380,27 @@ class ResultsScreen(AdaptiveScreen):
 
     def _source_block(self, f: Finding, max_lines: int = 12) -> Text:
         """The offending source lines, numbered, with the match highlighted."""
+        if f.start == f.end == 0 and not f.matched_text:
+            # Doc-level aggregate (density scores…): no single span to show —
+            # quoting line 1 would point the user at innocent code.
+            return Text("(applies to the whole file)", style=FAINT)
         t = Text()
         snippet = f.snippet or "—"
         lines = snippet.splitlines() or ["—"]
         clipped = lines[:max_lines]
         joined = "\n".join(clipped)
         span: tuple[int, int] | None = None
-        if f.matched_text and f.matched_text in joined:
-            i = joined.index(f.matched_text)
-            span = (i, i + len(f.matched_text))
+        if f.matched_text:
+            # The snippet starts at the finding line's column 1, so the match
+            # begins exactly at col-1 — a plain substring search could land on
+            # an earlier identical occurrence elsewhere in the snippet.
+            s = f.col - 1
+            avail = joined[s: s + len(f.matched_text)]
+            if avail and f.matched_text.startswith(avail):
+                span = (s, s + len(avail))  # clipped lines may cut the match short
+            elif f.matched_text in joined:
+                i = joined.index(f.matched_text)
+                span = (i, i + len(f.matched_text))
         pos = 0
         for k, line in enumerate(clipped):
             if k:
@@ -363,7 +412,7 @@ class ResultsScreen(AdaptiveScreen):
                 s = max(span[0], ls) - ls
                 e = min(span[1], le) - ls
                 t.append(line[:s], style=SOURCE)
-                t.append(line[s:e], style=f"bold #0b0e14 on {BAD}")
+                t.append(line[s:e], style=f"bold {BG} on {BAD}")
                 t.append(line[e:], style=SOURCE)
             else:
                 t.append(line, style=SOURCE)
@@ -396,9 +445,9 @@ class ResultsScreen(AdaptiveScreen):
                 body.append(f"\n  you'll be asked: {f.prompt_label}", style=FAINT)
             return "FIX PREVIEW", body
         body.append("  ", style=DIM)
-        body.append(f.suggested_fix or "Review and edit by hand.", style="#9aa4b8")
+        body.append(f.suggested_fix or "Review and edit by hand.", style=MUTED)
         body.append("\n  or let your AI assistant do it: ", style=FAINT)
-        body.append("x", style=f"bold #0b0e14 on {ACCENT}")
+        body.append("x", style=f"bold {BG} on {ACCENT}")
         body.append(" exports a ready fix prompt", style=FAINT)
         return "SUGGESTED FIX", body
 
@@ -408,17 +457,17 @@ class ResultsScreen(AdaptiveScreen):
         marker = "{value}"
         if marker in tmpl:
             i = tmpl.index(marker)
-            t.append(tmpl[:i], style="#9aa4b8")
-            t.append("value", style=f"bold #0b0e14 on {ACCENT}")
-            t.append(tmpl[i + len(marker):], style="#9aa4b8")
+            t.append(tmpl[:i], style=MUTED)
+            t.append("value", style=f"bold {BG} on {ACCENT}")
+            t.append(tmpl[i + len(marker):], style=MUTED)
         else:
-            t.append(tmpl, style="#9aa4b8")
+            t.append(tmpl, style=MUTED)
 
     def _action_hint(self, f: Finding) -> Text:
         t = Text()
 
         def key(k: str, label: str) -> None:
-            t.append(f" {k} ", style=f"bold #0b0e14 on {ACCENT}")
+            t.append(f" {k} ", style=f"bold {BG} on {ACCENT}")
             t.append(f" {label}  ", style=DIM)
 
         if f.status is not Status.OPEN:
@@ -427,8 +476,10 @@ class ResultsScreen(AdaptiveScreen):
             return t
         if f.fixability is Fixability.AUTO:
             key("f", "apply fix")
+            key("d", "diff")
         elif f.fixability is Fixability.PROMPT:
             key("f", "fix + value")
+            key("d", "diff")
         else:
             key("a", "annotate")
             key("x", "AI fix brief")
@@ -485,6 +536,64 @@ class ResultsScreen(AdaptiveScreen):
         if node is not None and isinstance(node.data, Finding):
             return node.data
         return None
+
+    def _branch(self) -> tuple[TreeNode, list[Finding]] | None:
+        """The cursor's category/file node and every OPEN finding under it."""
+        tree = self._tree()
+        if tree is None:
+            return None
+        node = tree.cursor_node
+        if node is None or isinstance(node.data, Finding) or not node.children:
+            return None
+        items: list[Finding] = []
+
+        def walk(n: TreeNode) -> None:
+            for child in n.children:
+                if isinstance(child.data, Finding):
+                    if child.data.status is Status.OPEN:
+                        items.append(child.data)
+                else:
+                    walk(child)
+
+        walk(node)
+        return node, items
+
+    # -------------------------------------------------------------------- undo
+    def _push_undo(self, label: str, abs_paths: set[str],
+                   affected: list[Finding]) -> dict:
+        """Snapshot files + statuses *before* a mutating action. Returns the entry."""
+        entry: dict = {
+            "label": label,
+            "files": {},
+            "statuses": [(f, f.status) for f in affected],
+            "added": [],   # findings born during the action (fixpoint passes)
+        }
+        for p in abs_paths:
+            state = fixer.snapshot_file(p)
+            if state is not None:
+                entry["files"][p] = state
+        self._undo.append(entry)
+        return entry
+
+    def action_undo(self) -> None:
+        if not self._undo:
+            self.notify("Nothing to undo.", severity="warning", timeout=2)
+            return
+        entry = self._undo.pop()
+        for p, state in entry["files"].items():
+            fixer.restore_file(p, state)
+        for f, prev in entry["statuses"]:
+            f.status = prev
+            self._record(f, flush=False)
+        for f in entry["added"]:
+            if f in self._findings:
+                self._findings.remove(f)
+        self._flush_store()
+        restored = [g for g in self._findings if g.abs_path in entry["files"]]
+        fixer.reanchor(restored)
+        self._build_tree()
+        self._refresh_counters()
+        self.notify(f"↶ Undid: {entry['label']}.", severity="information", timeout=2)
 
     def _record(self, f: Finding, *, flush: bool = True) -> None:
         """Persist how a finding was handled, so re-scans don't re-report it.
@@ -589,36 +698,119 @@ class ResultsScreen(AdaptiveScreen):
         else:
             self.notify("Manual only — use [a]nnotate or [s]kip.", severity="warning", timeout=3)
 
+    def _reanchor_file(self, f: Finding) -> None:
+        """Re-anchor the still-open findings sharing ``f``'s file after an edit.
+
+        A fix/annotation that adds or removes lines shifts everything below it;
+        without this the tree's ``L<n>`` labels and the detail pane's source
+        block drift away from the real file.
+        """
+        moved = [g for g in self._findings if g.file == f.file and g is not f]
+        if not moved:
+            return
+        fixer.reanchor(moved)
+        for g in moved:
+            self._refresh_label(g)
+
     def _do_fix(self, f: Finding, value: str | None) -> None:
+        self._push_undo(f"fix {self._basename(f.file)}:{f.line}", {f.abs_path}, [f])
         if not fixer.apply_fix(f, value):
+            self._undo.pop()  # nothing changed — keep the stack honest
             self.notify("Could not apply fix (content moved?).", severity="error", timeout=3)
             return
         self._record(f)
+        self._reanchor_file(f)
         self._refresh_node(f)
         self._refresh_counters()
-        self.notify(f"✓ Fixed: {f.message}", severity="information", timeout=2)
+        self.notify(f"✓ Fixed: {f.message}  (u undoes)", severity="information", timeout=2)
         self._advance()
+
+    def action_diff(self) -> None:
+        """Preview the exact unified diff a fix would apply — before trusting it."""
+        f = self._current()
+        if f is None:
+            return
+        if f.status is not Status.OPEN:
+            self.notify("Already handled.", severity="warning", timeout=2)
+            return
+        if f.fixability is Fixability.MANUAL:
+            self.notify(
+                "Manual finding — no automatic change to preview. x exports a fix brief.",
+                severity="warning",
+                timeout=3,
+            )
+            return
+        value = "«value»" if f.fixability is Fixability.PROMPT else None
+        diff = fixer.diff_preview(f, value)
+        if not diff:
+            self.notify("No preview available (content moved?).", severity="error", timeout=3)
+            return
+        self.app.push_screen(
+            DiffModal(f"{f.file}:{f.line} — {self._trunc(f.message, 42)}", diff)
+        )
 
     def action_skip(self) -> None:
         f = self._current()
-        if f is None or f.status is not Status.OPEN:
+        if f is not None:
+            if f.status is not Status.OPEN:
+                return
+            f.status = Status.SKIPPED
+            self._record(f)
+            self._refresh_node(f)
+            self._refresh_counters()
+            self._advance()
             return
-        f.status = Status.SKIPPED
-        self._record(f)
-        self._refresh_node(f)
+        # Cursor on a category/file row: offer to skip the whole branch.
+        branch = self._branch()
+        if branch is None:
+            return
+        node, items = branch
+        if not items:
+            self.notify("Nothing open under this branch.", severity="warning", timeout=2)
+            return
+
+        def callback(ok: bool | None) -> None:
+            if ok:
+                self._bulk_skip(items)
+
+        self.app.push_screen(
+            ConfirmModal(
+                f"Skip all {len(items)} open finding(s) in this branch?",
+                "They resurface on the next scan — skip means later, not never.",
+            ),
+            callback,
+        )
+
+    def _bulk_skip(self, items: list[Finding]) -> None:
+        for g in items:
+            g.status = Status.SKIPPED
+            self._record(g, flush=False)
+            self._refresh_label(g)
+        self._flush_store()
         self._refresh_counters()
-        self._advance()
+        self.notify(f"→ Skipped {len(items)} finding(s).", severity="information", timeout=2)
 
     def action_annotate(self) -> None:
         f = self._current()
         if f is None or f.status is not Status.OPEN:
             return
+        self._push_undo(
+            f"annotate {self._basename(f.file)}:{f.line}", {f.abs_path}, [f]
+        )
         if fixer.annotate(f):
             self._record(f)
+            self._reanchor_file(f)
             self._refresh_node(f)
             self._refresh_counters()
-            self.notify("✎ Annotated in source.", severity="information", timeout=2)
+            self.notify("✎ Annotated in source.  (u undoes)", severity="information", timeout=2)
             self._advance()
+        else:
+            self._undo.pop()
+            self.notify(
+                "Could not annotate (file unreadable or content moved?).",
+                severity="error",
+                timeout=3,
+            )
 
     def action_ignore(self) -> None:
         """Mark the finding as not-slop: suppress it now and in future scans.
@@ -628,19 +820,30 @@ class ResultsScreen(AdaptiveScreen):
         same token across every file — is set aside in one shot.
         """
         f = self._current()
-        if f is None or f.status is not Status.OPEN:
+        if f is None:
+            branch = self._branch()
+            if branch is None:
+                return
+            node, items = branch
+            if not items:
+                self.notify("Nothing open under this branch.", severity="warning", timeout=2)
+                return
+
+            def callback(ok: bool | None) -> None:
+                if ok:
+                    self._bulk_ignore(items)
+
+            self.app.push_screen(
+                ConfirmModal(
+                    f"Mark all {len(items)} open finding(s) here as not-slop?",
+                    "Their tokens are allowlisted — future scans stay quiet about them.",
+                ),
+                callback,
+            )
             return
-        allow = getattr(self.app, "allowlist", None)
-        if allow is not None:
-            allow.add(f)
-        sig = (f.rule_id, f.matched_text)
-        n = 0
-        for g in self._findings:
-            if g.status is Status.OPEN and (g.rule_id, g.matched_text) == sig:
-                g.status = Status.IGNORED
-                self._record(g, flush=False)
-                self._refresh_label(g)
-                n += 1
+        if f.status is not Status.OPEN:
+            return
+        n = self._ignore_signature(f)
         self._flush_store()
         self.query_one("#detail", Static).update(self._detail(f))
         self._refresh_counters()
@@ -656,6 +859,34 @@ class ResultsScreen(AdaptiveScreen):
             timeout=3,
         )
         self._advance()
+
+    def _ignore_signature(self, f: Finding) -> int:
+        """Allowlist ``f``'s signature; set aside every open twin. Returns count."""
+        allow = getattr(self.app, "allowlist", None)
+        if allow is not None:
+            allow.add(f)
+        sig = (f.rule_id, f.matched_text)
+        n = 0
+        for g in self._findings:
+            if g.status is Status.OPEN and (g.rule_id, g.matched_text) == sig:
+                g.status = Status.IGNORED
+                self._record(g, flush=False)
+                self._refresh_label(g)
+                n += 1
+        return n
+
+    def _bulk_ignore(self, items: list[Finding]) -> None:
+        n = 0
+        for g in items:
+            if g.status is Status.OPEN:  # a twin may already be set aside
+                n += self._ignore_signature(g)
+        self._flush_store()
+        self._refresh_counters()
+        self.notify(
+            f"⊘ Marked {n} finding(s) not-slop (allowlisted for future scans).",
+            severity="information",
+            timeout=3,
+        )
 
     def action_fix_auto(self) -> None:
         auto_open = [
@@ -684,27 +915,82 @@ class ResultsScreen(AdaptiveScreen):
         )
 
     def _apply_auto(self, targets: list[Finding], skipped: int) -> None:
+        entry = self._push_undo(
+            f"bulk fix ({len(targets)} finding(s))",
+            {f.abs_path for f in targets},
+            targets,
+        )
         # High offset first — same order as headless bulk fix — so earlier
         # deletes do not scramble later spans before relocation.
         ordered = sorted(targets, key=lambda f: (f.file, f.start), reverse=True)
         n = 0
+        touched: set[str] = set()
         for f in ordered:
             if fixer.apply_fix(f, None):
                 self._record(f, flush=False)
-                self._refresh_label(f)
+                touched.add(f.file)
                 n += 1
-        self._flush_store()
-        # repaint the detail pane for whatever the cursor is on now
-        current = self._current()
-        if current is not None:
-            self.query_one("#detail", Static).update(self._detail(current))
-        self._refresh_counters()
-        extra = f" (skipped {skipped} low-confidence)" if skipped else ""
-        self.notify(
-            f"⚡ Applied {n} automatic fix(es).{extra}",
-            severity="information",
-            timeout=3,
+        new_open = self._fixpoint(touched, entry) if touched else 0
+        extra_fixed = sum(
+            1 for f in entry["added"] if f.status is Status.FIXED
         )
+        self._flush_store()
+        if touched:
+            moved = [f for f in self._findings if f.file in touched]
+            fixer.reanchor(moved)
+        if not n:
+            self._undo.pop()
+        # Findings may have been added — rebuild the tree rather than patch labels.
+        self._build_tree()
+        self._refresh_counters()
+        msg = f"⚡ Applied {n + extra_fixed} automatic fix(es)."
+        if skipped:
+            msg += f" Skipped {skipped} low-confidence."
+        if new_open:
+            msg += f" {new_open} new finding(s) surfaced by the fixes."
+        msg += "  (u undoes)"
+        self.notify(msg, severity="information", timeout=4)
+
+    def _fixpoint(self, touched: set[str], entry: dict) -> int:
+        """Re-scan just-fixed files until stable; auto-fix what fixing unmasked.
+
+        Mirrors headless ``--fix``: a removed decoration can expose a finding
+        underneath (emoji header → bare boilerplate heading). New auto-fixable
+        findings are fixed immediately; the rest join the tree as OPEN. Returns
+        how many new open findings appeared. Everything born here is recorded in
+        ``entry["added"]`` so one undo reverses the whole bulk action.
+        """
+        root = str(getattr(self.app, "target_path", "") or "")
+        if not root:
+            return 0
+        store = getattr(self.app, "store", None)
+        existing = {(g.file, g.rule_id, g.matched_text) for g in self._findings}
+        new_open = 0
+        for _ in range(MAX_FIX_PASSES - 1):
+            fresh = rescan_paths(root, set(touched), store=store)
+            new_items = [
+                f for f in fresh
+                if (f.file, f.rule_id, f.matched_text) not in existing
+            ]
+            if not new_items:
+                break
+            auto_now = [
+                f for f in new_items
+                if f.fixability is Fixability.AUTO and f.confidence >= AUTO_FIX_FLOOR
+            ]
+            for f in new_items:
+                existing.add((f.file, f.rule_id, f.matched_text))
+                self._findings.append(f)
+                entry["added"].append(f)
+                if f not in auto_now:
+                    new_open += 1
+            if not auto_now:
+                break
+            for f in sorted(auto_now, key=lambda f: (f.file, f.start), reverse=True):
+                if fixer.apply_fix(f, None):
+                    self._record(f, flush=False)
+                    touched.add(f.file)
+        return new_open
 
     def action_export(self) -> None:
         """Export the open findings — everything the headless flags can emit.
@@ -734,7 +1020,7 @@ class ResultsScreen(AdaptiveScreen):
         reported = sorted(open_, key=lambda f: (f.file, f.line, f.col))
         jobs: dict[str, tuple[str, str]] = {
             "brief": ("fix-prompt.md", render_fix_prompt(reported, target=target)),
-            "json": ("findings.json", _render_json(target, reported, 0)),
+            "json": ("findings.json", _render_json(target, reported, [])),
             "sarif": ("findings.sarif", _render_sarif(reported)),
         }
         picks = list(jobs) if fmt == "all" else [fmt]

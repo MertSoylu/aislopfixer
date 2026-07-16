@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from .engine.models import Finding, Fixability, Status
+from .engine.util import line_col, make_snippet
 
 BACKUP_SUFFIX = ".aislopfixer.bak"
 
@@ -17,6 +18,45 @@ def make_backup(abs_path: str) -> str | None:
     if not Path(bak).exists():
         shutil.copy2(abs_path, bak)
     return bak
+
+
+def _read_text(path: Path) -> tuple[str, str, bool]:
+    """``(LF-normalized text, original newline, had_bom)`` for a source file.
+
+    Finding offsets are computed against LF-normalized, BOM-stripped text (the
+    scanner reads with universal newlines and ``utf-8-sig``), so edits must
+    happen in that exact form — but writing the result back must not silently
+    convert the file's line endings or drop its BOM.
+    """
+    raw = path.read_bytes().decode("utf-8")
+    bom = raw.startswith("﻿")
+    if bom:
+        raw = raw[1:]
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    return raw.replace("\r\n", "\n").replace("\r", "\n"), newline, bom
+
+
+def _write_text(path: Path, text: str, newline: str, bom: bool) -> None:
+    """Write LF-normalized ``text`` back with the original newline and BOM."""
+    path.write_text(("﻿" if bom else "") + text, encoding="utf-8", newline=newline)
+
+
+def snapshot_file(abs_path: str) -> tuple[str, str, bool] | None:
+    """Capture a file's exact restorable state (text, newline, BOM) for undo."""
+    try:
+        return _read_text(Path(abs_path))
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def restore_file(abs_path: str, state: tuple[str, str, bool]) -> bool:
+    """Write a :func:`snapshot_file` state back; True on success."""
+    text, newline, bom = state
+    try:
+        _write_text(Path(abs_path), text, newline, bom)
+    except OSError:
+        return False
+    return True
 
 
 def _locate(text: str, finding: Finding) -> tuple[int, int] | None:
@@ -73,8 +113,8 @@ def compute_new_text(text: str, finding: Finding, value: str | None) -> str | No
 def diff_preview(finding: Finding, value: str | None = None) -> str | None:
     """Unified diff of the change the fix would make, or None if not applicable."""
     try:
-        text = Path(finding.abs_path).read_text(encoding="utf-8")
-    except OSError:
+        text, _, _ = _read_text(Path(finding.abs_path))
+    except (OSError, UnicodeDecodeError):
         return None
     new_text = compute_new_text(text, finding, value)
     if new_text is None or new_text == text:
@@ -93,15 +133,15 @@ def apply_fix(finding: Finding, value: str | None = None, *, backup: bool = True
     """Apply a single finding's fix to its file. Returns True on success."""
     path = Path(finding.abs_path)
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
+        text, newline, bom = _read_text(path)
+    except (OSError, UnicodeDecodeError):
         return False
     new_text = compute_new_text(text, finding, value)
     if new_text is None or new_text == text:
         return False
     if backup:
         make_backup(finding.abs_path)
-    path.write_text(new_text, encoding="utf-8")
+    _write_text(path, new_text, newline, bom)
     finding.status = Status.FIXED
     return True
 
@@ -123,8 +163,8 @@ def annotate(finding: Finding, *, backup: bool = True) -> bool:
     """Insert a comment marker on the line above the finding."""
     path = Path(finding.abs_path)
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
+        text, newline, bom = _read_text(path)
+    except (OSError, UnicodeDecodeError):
         return False
     span = _locate(text, finding)
     start = span[0] if span else min(finding.start, len(text))
@@ -135,6 +175,32 @@ def annotate(finding: Finding, *, backup: bool = True) -> bool:
     new_text = text[:line_start] + comment + text[line_start:]
     if backup:
         make_backup(finding.abs_path)
-    path.write_text(new_text, encoding="utf-8")
+    _write_text(path, new_text, newline, bom)
     finding.status = Status.ANNOTATED
     return True
+
+
+def reanchor(findings: list[Finding]) -> None:
+    """Recompute line/col/snippet of OPEN findings from current file content.
+
+    A fix that deletes lines shifts every finding below it; the shifted
+    findings would otherwise be reported (and rendered) at their pre-fix
+    positions. Groups by file so each file is read once; findings whose
+    ``matched_text`` can no longer be found are left untouched.
+    """
+    by_path: dict[str, list[Finding]] = {}
+    for f in findings:
+        if f.status is Status.OPEN:
+            by_path.setdefault(f.abs_path, []).append(f)
+    for abs_path, group in by_path.items():
+        try:
+            text, _, _ = _read_text(Path(abs_path))
+        except (OSError, UnicodeDecodeError):
+            continue
+        for f in group:
+            span = _locate(text, f)
+            if span is None:
+                continue
+            f.start, f.end = span
+            f.line, f.col = line_col(text, f.start)
+            f.snippet = make_snippet(text, f.start, f.end)

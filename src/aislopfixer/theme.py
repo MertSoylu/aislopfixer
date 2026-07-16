@@ -54,6 +54,7 @@ TEXT = "#cdd6f4"      # primary text
 DIM = "#7b8496"       # secondary text
 FAINT = "#5b647a"     # tertiary text / hints
 SOURCE = "#8a94a6"    # source-code excerpt text
+MUTED = "#9aa4b8"     # de-emphasized body text (between TEXT and DIM)
 ACCENT = "#36e2e6"    # brand teal
 ACCENT_ALT = "#a78bfa" # violet secondary accent
 OK = "#4ade80"

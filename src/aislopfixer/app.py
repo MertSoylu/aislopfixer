@@ -18,6 +18,7 @@ class AISlopFixerApp(App):
         self.initial_path = initial_path
         self.target_path: str | None = None
         self.findings: list[Finding] = []
+        self.files_scanned: int | None = None
         self.store: Store | None = None
 
     @property
@@ -50,7 +51,9 @@ class AISlopFixerApp(App):
         """Return to the path picker to scan a different folder."""
         self.switch_screen(PathScreen(self.target_path or ""))
 
-    def show_results(self, findings: list[Finding]) -> None:
+    def show_results(self, findings: list[Finding], files_scanned: int | None = None) -> None:
+        if files_scanned is not None:
+            self.files_scanned = files_scanned
         self.findings = findings
         if self.store is not None:
             self.store.write_report(findings, self.target_path)

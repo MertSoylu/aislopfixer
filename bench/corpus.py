@@ -152,6 +152,14 @@ CASES: list[dict] = [
         "clean": True,
     },
     {
+        "name": "clean_empty_catch_with_comment",
+        "filename": "prefs.js",
+        "text": "function readPrefs() {\n  try {\n    return JSON.parse(localStorage.getItem('prefs'));\n"
+                "  } catch (err) {\n    // ignore: private mode / quota — defaults are fine\n  }\n"
+                "  return {};\n}\n",
+        "clean": True,
+    },
+    {
         "name": "clean_eval_in_comment",
         "filename": "note.js",
         "text": "// never call eval() on user input; use JSON.parse instead\n"
@@ -311,6 +319,122 @@ CASES: list[dict] = [
         "filename": "typography.html",
         "text": "<style>body { font-family: Inter, system-ui, sans-serif; }</style>\n"
                 "<p>Hello</p>\n",
+        "clean": True,
+    },
+    # ------------------------------------------- modern landing/copy slop cases
+    {
+        "name": "fake_metric_strip",
+        "filename": "stats.html",
+        "text": "<div><span>99.9% uptime</span><span>24/7 support</span>"
+                "<span>10k+ users</span></div>\n",
+        "expect": {"design.fake_metrics"},
+    },
+    {
+        "name": "pricing_triad",
+        "filename": "pricing.html",
+        "text": "<section><h3>Pro</h3><p>$29/month</p>"
+                '<span class="badge">Most Popular</span>'
+                "<h3>Enterprise</h3><p>Contact sales</p></section>\n",
+        "expect": {"design.pricing_triad"},
+    },
+    {
+        "name": "section_recipe",
+        "filename": "page.tsx",
+        "text": "export default function Page() {\n  return (\n    <main>\n"
+                "      {/* Hero Section */}\n      <Hero />\n"
+                "      {/* Testimonials */}\n      <Testimonials />\n"
+                "      {/* Pricing */}\n      <Pricing />\n"
+                "    </main>\n  );\n}\n",
+        "expect": {"design.section_recipe"},
+    },
+    {
+        "name": "fake_logo_cloud",
+        "filename": "logos.html",
+        "text": "<p>Trusted by teams at</p>\n"
+                "<div><span>Google</span><span>Netflix</span>"
+                "<span>Spotify</span><span>Uber</span></div>\n",
+        "expect": {"design.fake_logo_cloud"},
+    },
+    {
+        "name": "blob_glow_decor",
+        "filename": "hero.html",
+        "text": '<div class="absolute -top-24 -left-24 w-96 h-96 rounded-full '
+                'bg-purple-500/30 blur-3xl"></div>\n',
+        "expect": {"design.blob_glow"},
+    },
+    {
+        "name": "generic_microcopy_pair",
+        "filename": "cta.html",
+        "text": "<p>No credit card required. Cancel anytime.</p>\n",
+        "expect": {"copy.microcopy"},
+    },
+    {
+        "name": "template_testimonial",
+        "filename": "quotes.html",
+        "text": "<blockquote>This tool has completely transformed the way we "
+                "work.</blockquote>\n",
+        "expect": {"copy.testimonial"},
+    },
+    # ------------------------------------------ modern landing/copy clean guards
+    {
+        "name": "clean_single_metric",
+        "filename": "sla.html",
+        "text": "<p>We guarantee 99.95% uptime, backed by SLA credits.</p>\n",
+        "clean": True,
+    },
+    {
+        "name": "clean_pricing_no_badge",
+        "filename": "plans.html",
+        "text": "<section><h3>Pro</h3><p>$29/month</p>"
+                "<h3>Enterprise</h3><p>Contact sales</p></section>\n",
+        "clean": True,
+    },
+    {
+        "name": "clean_header_footer_comments",
+        "filename": "layout.html",
+        "text": "<!-- Header -->\n<header>x</header>\n"
+                "<!-- Main -->\n<main>y</main>\n"
+                "<!-- Footer -->\n<footer>z</footer>\n",
+        "clean": True,
+    },
+    {
+        "name": "clean_integration_list",
+        "filename": "integrations.html",
+        "text": "<p>Works with Slack, Google Drive, Notion and Figma.</p>\n",
+        "clean": True,
+    },
+    {
+        "name": "clean_rounded_avatar",
+        "filename": "team.html",
+        "text": '<img class="rounded-full w-10 h-10" src="/mert.png" alt="Mert" />\n',
+        "clean": True,
+    },
+    {
+        "name": "clean_single_microcopy",
+        "filename": "billing.html",
+        "text": "<p>Cancel anytime from your account settings.</p>\n",
+        "clean": True,
+    },
+    {
+        "name": "clean_specific_testimonial",
+        "filename": "case-study.html",
+        "text": "<blockquote>Migrating our invoicing to Billfold cut month-end "
+                "close from 4 days to 6 hours.</blockquote>\n",
+        "clean": True,
+    },
+    {
+        # Human-made Tailwind marketing page: soft radii, shadows, dual CTAs,
+        # a 3-col grid and a "How it works" heading — all weak, human-plausible
+        # signals. Without one strong AI tell the landing-kit rule must not fire.
+        "name": "clean_human_tailwind_marketing",
+        "filename": "landing.html",
+        "text": '<section class="grid grid-cols-3 gap-8">\n'
+                '  <div class="rounded-2xl shadow-xl p-6">Starter</div>\n'
+                '  <div class="rounded-2xl shadow-xl p-6">Team</div>\n'
+                '</section>\n'
+                '<a href="/signup">Get started free</a>\n'
+                '<a href="/features">Learn more</a>\n'
+                '<h2>How it works</h2>\n',
         "clean": True,
     },
 ]

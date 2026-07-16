@@ -20,11 +20,13 @@ def test_folder_name_is_dot_aislopfixer():
 
 
 # ---------------------------------------------------------------- suppression
-def test_fixed_finding_suppressed_next_scan(tmp_path):
+def test_fixed_finding_not_suppressed_next_scan(tmp_path):
+    # A real fix removes the text from that spot; if the same signature matches
+    # again it is a *different* occurrence (or a revert) — it must be reported.
     store = Store(str(tmp_path))
     store.record(mk("placeholder.bracket", "[Your Company Name]", status=Status.FIXED))
     again = mk("placeholder.bracket", "[Your Company Name]")
-    assert store.filter([again]) == []
+    assert store.filter([again]) == [again]
 
 
 def test_annotated_finding_suppressed(tmp_path):
@@ -49,7 +51,7 @@ def test_skipped_finding_resurfaces(tmp_path):
 
 def test_other_signature_not_suppressed(tmp_path):
     store = Store(str(tmp_path))
-    store.record(mk("placeholder.bracket", "[A]", status=Status.FIXED))
+    store.record(mk("placeholder.bracket", "[A]", status=Status.ANNOTATED))
     keep = mk("placeholder.bracket", "[B]")
     assert store.filter([keep]) == [keep]
 
@@ -63,7 +65,7 @@ def test_store_also_applies_allowlist(tmp_path):
 # ---------------------------------------------------------------- persistence
 def test_ledger_persists_across_instances(tmp_path):
     Store(str(tmp_path)).record(
-        mk("placeholder.lorem", "lorem ipsum dolor", status=Status.FIXED)
+        mk("placeholder.lorem", "lorem ipsum dolor", status=Status.ANNOTATED)
     )
     assert (tmp_path / DIRNAME / LEDGER).exists()
     fresh = Store(str(tmp_path))
@@ -105,3 +107,23 @@ def test_write_report_clean_project(tmp_path):
     store.write_report([], str(tmp_path))
     text = (tmp_path / DIRNAME / REPORT).read_text(encoding="utf-8")
     assert "No issues found" in text
+
+
+def test_report_scores_live_findings_not_scan_time(tmp_path):
+    # After fixes, the report must not keep claiming the scan-time score —
+    # score what is still open, keep the original as a "was" reference.
+    store = Store(str(tmp_path))
+    a = mk("ai_leak.strong.0", "As an AI language model", status=Status.FIXED)
+    a.confidence = 0.97
+    b = mk("placeholder.todo", "TODO: later")
+    b.confidence = 0.44
+    store.write_report([a, b], str(tmp_path))
+    text = (tmp_path / ".aislopfixer" / "report.md").read_text(encoding="utf-8")
+    assert "- **Slop score:** 44/100" in text
+    assert "_(was" in text
+
+    # An untouched scan shows a single number — no misleading "was".
+    a.status = Status.OPEN
+    store.write_report([a, b], str(tmp_path))
+    text = (tmp_path / ".aislopfixer" / "report.md").read_text(encoding="utf-8")
+    assert "_(was" not in text

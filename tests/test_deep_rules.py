@@ -167,6 +167,33 @@ def test_same_file_repeat_not_flagged():
     assert "duplicate.code_block" not in ids(cross)
 
 
+def _many_helpers() -> str:
+    text = ""
+    for name in ("slugify", "titleize", "dasherize"):
+        text += _HELPER.replace("slugify", name) + "\n"
+    return text
+
+
+def test_copied_file_collapses_to_one_finding_per_file():
+    # Two copies of a whole utility file share every block: that is ONE root
+    # cause (a copied file), so report once per file, not once per block.
+    text = _many_helpers()
+    cross = run_cross_rules([sf(text, "a.js"), sf(text, "pages/b.js")])
+    dup = [x for x in cross if x.rule_id == "duplicate.code_block"]
+    assert len(dup) == 2
+    assert all("3" in x.message for x in dup)
+
+
+def test_test_files_exempt_from_code_duplicates():
+    # Copy-pasted setup across *.test.js / *.spec.ts files is normal practice.
+    cross = run_cross_rules([sf(_HELPER, "a.test.js"), sf(_HELPER, "b.test.js")])
+    assert "duplicate.code_block" not in ids(cross)
+    cross = run_cross_rules(
+        [sf(_HELPER, "__tests__/a.js"), sf(_HELPER, "__tests__/b.js")]
+    )
+    assert "duplicate.code_block" not in ids(cross)
+
+
 # ------------------------------------------------------------ comment density
 def test_comment_density_flagged():
     lines = []
@@ -225,3 +252,24 @@ def test_catch_with_real_handling_not_flagged():
     ))
     assert "codegen.log_only_catch" not in ids(f)
     assert "codegen.catch_return_default" not in ids(f)
+
+
+# ------------------------------------------------------- multiline imports
+def test_multiline_import_missing_export_flagged():
+    # Prettier-wrapped imports span lines; the phantom-symbol check must still see them.
+    util = sf("export function formatDate(d) { return d.toISOString(); }\n", "util.ts")
+    app = sf(
+        "import {\n  formatDate,\n  parseDate,\n} from './util';\n", "app.ts"
+    )
+    found = [f for f in run_cross_rules([util, app]) if f.rule_id == "import.missing_export"]
+    assert len(found) == 1
+    assert "parseDate" in found[0].message
+
+
+def test_multiline_unused_import_flagged():
+    f = run_file_rules(sf(
+        "import {\n  useState,\n  useEffect,\n} from 'react';\n"
+        "export const n = useState(0);\n", "hook.ts"))
+    found = [x for x in f if x.rule_id == "import.unused"]
+    assert len(found) == 1
+    assert "useEffect" in found[0].message

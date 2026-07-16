@@ -22,9 +22,24 @@ def test_empty_catch_flagged():
     assert "codegen.empty_catch" in ids(f)
 
 
-def test_empty_catch_comment_only_flagged():
+def test_empty_catch_comment_body_not_flagged():
+    # A comment in the body documents intent — deliberate suppression, not slop
+    # (same convention as eslint no-empty: a comment makes the block non-empty).
     f = run_file_rules(sf("try { x(); } catch (err) {\n  // ignore\n}\n"))
-    assert "codegen.empty_catch" in ids(f)
+    assert "codegen.empty_catch" not in ids(f)
+
+
+def test_empty_catch_block_comment_body_not_flagged():
+    f = run_file_rules(sf("try { x(); } catch { /* quota errors are fine */ }\n"))
+    assert "codegen.empty_catch" not in ids(f)
+
+
+def test_empty_catch_is_info_severity():
+    from aislopfixer.engine.models import Severity
+
+    f = run_file_rules(sf("try { risky(); } catch (e) {}\n"))
+    hits = [x for x in f if x.rule_id == "codegen.empty_catch"]
+    assert hits and hits[0].severity is Severity.INFO
 
 
 def test_empty_promise_catch_flagged():
@@ -216,3 +231,15 @@ def test_same_package_reported_once_per_file(tmp_path):
     )
     found = [f for f in run_cross_rules(files) if f.rule_id == "import.undeclared"]
     assert len(found) == 1
+
+
+def test_multiline_undeclared_import_flagged(tmp_path):
+    # A Prettier-wrapped import of a hallucinated package must still be caught.
+    files = _project(
+        tmp_path,
+        {"react": "^18.0.0"},
+        {"app.tsx": "import {\n  thing,\n} from 'totally-hallucinated-pkg';\n"},
+    )
+    found = [f for f in run_cross_rules(files) if f.rule_id == "import.undeclared"]
+    assert len(found) == 1
+    assert "totally-hallucinated-pkg" in found[0].message

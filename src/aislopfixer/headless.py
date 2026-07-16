@@ -12,7 +12,10 @@ The exit code makes it a gate:
 
 ``--fix`` additionally applies the safe automatic fixes (the same
 confidence-gated set as the TUI's "fix all auto") before reporting, and
-records them so future scans stay quiet about them.
+records them so future scans stay quiet about them. Fixing runs to a bounded
+fixpoint: a fix can unmask a finding the removed slop was hiding, so the scan
++ fix cycle repeats (≤ :data:`MAX_FIX_PASSES`) until nothing new applies —
+and every applied fix is listed line-by-line in the output.
 
 ``--prompt`` renders the remaining findings as a fix brief for an AI coding
 assistant (see :mod:`aislopfixer.prompter`); combined with ``--fix`` that is
@@ -36,8 +39,33 @@ from .store import Store
 
 # Keep in sync with screens/results.py — the TUI's bulk-auto-fix floor.
 AUTO_FIX_FLOOR = 0.60
+# Fixing can surface findings the removed slop was masking (strip an emoji
+# header and a bare boilerplate heading appears). Re-scan and re-fix until no
+# new automatic fix applies, bounded so a pathological cycle cannot loop.
+MAX_FIX_PASSES = 3
 
 _SEV_ORDER = {"info": 0, "warning": 1, "error": 2}
+
+# When the output stream cannot encode our punctuation (legacy Windows
+# consoles: cp1252 and narrower), degrade to ASCII lookalikes instead of
+# letting `errors="replace"` pepper the report with question marks.
+_ASCII_FALLBACK = str.maketrans({
+    "—": "-", "–": "-", "·": "|", "…": "...",
+    "‘": "'", "’": "'", "“": '"', "”": '"',
+    "→": "->", "✓": "+", "⊘": "x", "▲": "!",
+})
+
+
+def _fit_encoding(text: str, stream: TextIO) -> str:
+    """Return ``text`` as-is when the stream can encode it, else ASCII-degraded."""
+    enc = getattr(stream, "encoding", None)
+    if not enc:
+        return text
+    try:
+        text.encode(enc)
+    except (UnicodeEncodeError, LookupError):
+        return text.translate(_ASCII_FALLBACK)
+    return text
 
 
 def run_check(
@@ -78,9 +106,18 @@ def run_check(
     store = Store(str(target)) if use_store else None
     findings = scan_project(str(target), store=store, config=config)
 
-    fixed = _apply_auto_fixes(findings, store) if fix else 0
-    if fix and store is not None:
-        store.write_report(findings, str(target))
+    fixed: list[Finding] = []
+    if fix:
+        for _ in range(MAX_FIX_PASSES):
+            batch = _apply_auto_fixes(findings, store)
+            fixed.extend(batch)
+            if not batch:
+                break
+            # Fixes can unmask new findings — rescan until stable (bounded).
+            findings = scan_project(str(target), store=store, config=config)
+        if store is not None:
+            still_open = [f for f in findings if f.status is Status.OPEN]
+            store.write_report(fixed + still_open, str(target))
 
     reported = sorted(
         (
@@ -93,13 +130,14 @@ def run_check(
     if as_prompt:
         from .prompter import render_fix_prompt
 
-        out.write(render_fix_prompt(reported, target=path))
+        rendered = render_fix_prompt(reported, target=path)
     elif as_sarif:
-        out.write(_render_sarif(reported))
+        rendered = _render_sarif(reported)
     elif as_json:
-        out.write(_render_json(str(target), reported, fixed))
+        rendered = _render_json(str(target), reported, fixed)
     else:
-        out.write(_render_text(str(target), reported, fixed))
+        rendered = _render_text(str(target), reported, fixed)
+    out.write(_fit_encoding(rendered, out))
 
     threshold = _SEV_ORDER.get(fail_on)
     if threshold is None:  # "never"
@@ -108,8 +146,8 @@ def run_check(
     return 1 if failing else 0
 
 
-def _apply_auto_fixes(findings: list[Finding], store: Store | None) -> int:
-    """Apply the confidence-gated AUTO fixes; record them; return the count.
+def _apply_auto_fixes(findings: list[Finding], store: Store | None) -> list[Finding]:
+    """Apply the confidence-gated AUTO fixes; record them; return those fixed.
 
     Fixes are applied high-offset-first so earlier deletes do not invalidate
     later spans before ``fixer._locate`` can re-anchor them.
@@ -125,41 +163,65 @@ def _apply_auto_fixes(findings: list[Finding], store: Store | None) -> int:
         )
     ]
     targets.sort(key=lambda f: (f.file, f.start), reverse=True)
-    n = 0
+    done: list[Finding] = []
+    touched: set[str] = set()
     for f in targets:
         if fixer.apply_fix(f, None):
-            n += 1
+            done.append(f)
+            touched.add(f.file)
             if store is not None:
                 store.record(f, flush=False)
-    if store is not None and n:
+    if store is not None and done:
         store.flush()
-    return n
+    if touched:
+        # Deletes shift the lines below them — re-anchor the still-open
+        # findings in the edited files so the report carries real positions.
+        fixer.reanchor([f for f in findings if f.file in touched])
+    return done
 
 
 # ------------------------------------------------------------------ rendering
-def _render_text(target: str, reported: list[Finding], fixed: int) -> str:
+def _one_line(s: str, n: int = 80) -> str:
+    s = " ".join(s.split())
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _render_text(target: str, reported: list[Finding], fixed: list[Finding]) -> str:
     lines: list[str] = []
+    # Say exactly what --fix changed — a bare count asks for blind trust.
+    for f in sorted(fixed, key=lambda f: (f.file, f.line, f.col)):
+        what = _one_line(f.matched_text) or f.message
+        action = (
+            f"replaced `{what}` with `{_one_line(f.replacement)}`"
+            if f.replacement else f"removed `{what}`"
+        )
+        lines.append(f"{f.file}:{f.line}:{f.col}: fixed [{f.rule_id}] {action}")
+    if fixed:
+        lines.append("")
     for f in reported:
         lines.append(
             f"{f.file}:{f.line}:{f.col}: "
             f"{f.severity.value} [{f.rule_id}] {f.message} "
             f"({round(f.confidence * 100)}%)"
         )
-    if lines:
+    if reported:
         lines.append("")
     n_files = len({f.file for f in reported})
     score = round(project_score_from_findings(reported) * 100)
     summary = f"{len(reported)} finding(s) in {n_files} file(s) - slop score {score}/100"
     if fixed:
-        summary += f" - {fixed} fixed automatically"
+        summary += f" - {len(fixed)} fixed automatically (backups: *.aislopfixer.bak)"
     if not reported:
-        summary = "no slop found" + (f" - {fixed} fixed automatically" if fixed else "")
+        summary = "no slop found" + (
+            f" - {len(fixed)} fixed automatically (backups: *.aislopfixer.bak)"
+            if fixed else ""
+        )
     lines.append(summary)
     lines.append("")
     return "\n".join(lines)
 
 
-def _render_json(target: str, reported: list[Finding], fixed: int) -> str:
+def _render_json(target: str, reported: list[Finding], fixed: list[Finding]) -> str:
     by_sev = {s.value: 0 for s in Severity}
     for f in reported:
         by_sev[f.severity.value] += 1
@@ -169,7 +231,19 @@ def _render_json(target: str, reported: list[Finding], fixed: int) -> str:
         "path": target,
         "slop_score": round(project_score_from_findings(reported) * 100),
         "total": len(reported),
-        "auto_fixed": fixed,
+        "auto_fixed": len(fixed),
+        "fixed": [
+            {
+                "rule_id": f.rule_id,
+                "file": f.file,
+                "line": f.line,
+                "col": f.col,
+                "message": f.message,
+                "matched_text": f.matched_text,
+                "replacement": f.replacement,
+            }
+            for f in sorted(fixed, key=lambda f: (f.file, f.line, f.col))
+        ],
         "by_severity": by_sev,
         "findings": [
             {

@@ -51,9 +51,10 @@ RULE_OVERRIDE: dict[str, float] = {
     "codegen.debugger": 0.88,
     "codegen.debug_log": 0.60,
     "codegen.restate_comment": 0.30,
-    # Swallowed errors: a strong generated-code habit, but empty catches exist
-    # in human code too — keep below the auto-fix floor.
-    "codegen.empty_catch": 0.66,
+    # Swallowed errors: a generated-code habit, but a deliberate human idiom
+    # too (feature detection, fire-and-forget) — quiet alone, corroboration
+    # lifts it in files carrying other authorship tells.
+    "codegen.empty_catch": 0.50,
     # Weaker catch shapes: masked failures, but common in human code too.
     "codegen.catch_return_default": 0.62,
     "codegen.log_only_catch": 0.45,
@@ -102,6 +103,17 @@ RULE_OVERRIDE: dict[str, float] = {
     "design.glassmorphism": 0.58,
     "design.landing_kit": 0.82,
     "design.emoji_ui": 0.72,
+    # Modern landing recipe tells (landing_tells.py). Gated/composite rules sit
+    # higher; pure-aesthetic or human-plausible shapes stay below the auto floor.
+    "design.fake_metrics": 0.66,
+    "design.pricing_triad": 0.58,
+    "design.section_recipe": 0.75,
+    "design.fake_logo_cloud": 0.62,
+    "design.blob_glow": 0.68,
+    # Marketing-copy templates (copy_slop.py): microcopy is ≥2-distinct gated,
+    # testimonial shapes are specific but appear in human marketing too.
+    "copy.microcopy": 0.60,
+    "copy.testimonial": 0.55,
     "prose.emdash_density": 0.45,
     "md.bold_lead_list": 0.55,
     "md.boilerplate_section": 0.70,
@@ -137,26 +149,36 @@ def score_finding(f: Finding) -> float:
 # never inflated; a file mixing, say, an elision marker + a stub + a debug log is.
 _TELL_FAMILIES: tuple[str, ...] = (
     "ai_leak", "codegen", "merge.conflict", "secret", "security",
-    "md.emoji", "buzzword.density", "import.", "design.",
+    "md.emoji", "md.checkmark", "buzzword.density", "import.", "design.", "copy.",
 )
+# Prefixes that are the *same* underlying tell: checkmark bullets and emoji
+# headers are both Markdown emoji decoration — counting them as two independent
+# families would let one habit corroborate itself.
+_FAMILY_ALIAS = {"md.checkmark": "md.emoji"}
 _CORROBORATION_STEP = 0.12  # confidence gained per extra co-occurring family
 
 
 def _family(rule_id: str) -> str | None:
     for fam in _TELL_FAMILIES:
         if rule_id.startswith(fam):
-            return fam
+            return _FAMILY_ALIAS.get(fam, fam)
     return None
 
 
 def corroborate(findings: list[Finding]) -> list[Finding]:
-    """Boost confidences when ≥2 distinct AI-tell families co-occur in one file."""
+    """Boost confidences when ≥2 distinct AI-tell families co-occur in one file.
+
+    Pinned findings are left untouched — a rule that fixed its own confidence
+    meant that exact value.
+    """
     families = {fam for f in findings if (fam := _family(f.rule_id))}
     extra = len(families) - 1
     if extra <= 0:
         return findings
     factor = min(0.4, _CORROBORATION_STEP * extra)
     for f in findings:
+        if f.pinned:
+            continue
         f.confidence = _clamp01(f.confidence + (1.0 - f.confidence) * factor)
     return findings
 
@@ -165,11 +187,13 @@ def reset_and_corroborate(findings: list[Finding]) -> list[Finding]:
     """Recompute base confidences, then corroborate per file.
 
     Used after file-rules and cross-rules are merged so an ``import.*`` tell in
-    the same file as ``ai_leak`` / ``design.*`` still lifts the group. Mutates
-    and returns ``findings`` (order preserved).
+    the same file as ``ai_leak`` / ``design.*`` still lifts the group. Pinned
+    confidences are preserved. Mutates and returns ``findings`` (order
+    preserved).
     """
     for f in findings:
-        f.confidence = score_finding(f)
+        if not f.pinned:
+            f.confidence = score_finding(f)
     by_file: dict[str, list[Finding]] = {}
     for f in findings:
         by_file.setdefault(f.file, []).append(f)

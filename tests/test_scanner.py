@@ -71,3 +71,59 @@ def test_count_matches_collect_with_oversized_file(tmp_path):
     (tmp_path / "ok.html").write_text("<h1>hi</h1>", encoding="utf-8")
     (tmp_path / "huge.js").write_text("/* x */\n" * (MAX_BYTES // 4), encoding="utf-8")
     assert count_eligible(str(tmp_path)) == len(collect(str(tmp_path))) == 1
+
+
+def test_bom_is_stripped_from_scanned_text(tmp_path):
+    # A leading BOM must not survive into rule input — it silently breaks
+    # every ^-anchored pattern on line 1 (merge markers, emoji headers…).
+    (tmp_path / "x.js").write_bytes(b"\xef\xbb\xbf<<<<<<< HEAD\nconst a = 1;\n")
+    files = collect(str(tmp_path))
+    assert len(files) == 1
+    assert files[0].text.startswith("<<<<<<<")
+
+
+def test_minified_by_name_skipped(tmp_path):
+    (tmp_path / "lib.min.js").write_text("const x = 1;\n" * 5, encoding="utf-8")
+    (tmp_path / "app-min.css").write_text("body{color:red}\n", encoding="utf-8")
+    (tmp_path / "app.js").write_text("const y = 2;\n", encoding="utf-8")
+    rels = {sf.rel_path for sf in collect(str(tmp_path))}
+    assert rels == {"app.js"}
+
+
+def test_minified_by_content_skipped(tmp_path):
+    # A single multi-KB line is build output, not authored source — scanning it
+    # floods per-match rules (a vendor bundle has hundreds of `catch(t){}`).
+    bundle = "!function(){" + "var a=1;try{f()}catch(t){}" * 800 + "}();"
+    (tmp_path / "bundle.js").write_text(bundle, encoding="utf-8")
+    (tmp_path / "app.js").write_text("const y = 2;\n", encoding="utf-8")
+    rels = {sf.rel_path for sf in collect(str(tmp_path))}
+    assert rels == {"app.js"}
+
+
+def test_authored_file_with_one_long_line_not_skipped(tmp_path):
+    # One inlined data-URI among normal lines is authored code, not a bundle.
+    lines = [f".c{i} {{ color: #123; }}" for i in range(80)]
+    lines.insert(40, ".hero { background: url(data:image/png;base64," + "A" * 3000 + "); }")
+    (tmp_path / "site.css").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    rels = {sf.rel_path for sf in collect(str(tmp_path))}
+    assert rels == {"site.css"}
+
+
+def test_count_matches_collect_with_minified(tmp_path):
+    (tmp_path / "ok.js").write_text("const y = 2;\n", encoding="utf-8")
+    (tmp_path / "vendor.min.js").write_text("var a=1;\n", encoding="utf-8")
+    bundle = "!function(){" + "var a=1;" * 1500 + "}();"
+    (tmp_path / "chunk.js").write_text(bundle, encoding="utf-8")
+    assert count_eligible(str(tmp_path)) == len(collect(str(tmp_path))) == 1
+
+
+def test_count_eligible_honors_config_ignore(tmp_path):
+    from aislopfixer.config import Config
+
+    (tmp_path / "index.html").write_text("<p>hi</p>\n", encoding="utf-8")
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    (legacy / "old.html").write_text("<p>old</p>\n", encoding="utf-8")
+    (tmp_path / ".aislopfixer.toml").write_text('ignore = ["legacy"]\n', encoding="utf-8")
+    assert count_eligible(str(tmp_path)) == 2
+    assert count_eligible(str(tmp_path), Config.load(str(tmp_path))) == 1

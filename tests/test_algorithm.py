@@ -229,3 +229,69 @@ def test_store_learns_noisy_rules(tmp_path):
     assert store.ignored_count("buzzword.leverage") == 3
     assert "buzzword.leverage" in store.noisy_rules()
     assert "buzzword.leverage" not in store.noisy_rules(threshold=4)
+
+
+# ------------------------------------------------------------- regex literals
+def test_regex_literal_slashes_do_not_open_comment():
+    # `//` inside a regex literal is not a line comment — code after it is live.
+    text = "const re = /https?:\\/\\//; eval(userInput);\n"
+    _, comments = code_masks(text, ".js")
+    assert not point_in(comments, text.index("eval"))
+
+
+def test_regex_literal_quote_does_not_open_string():
+    text = "const re = /'/; eval(userInput);\n"
+    strings, _ = code_masks(text, ".js")
+    assert not point_in(strings, text.index("eval"))
+
+
+def test_regex_after_return_keyword_recognized():
+    # After `return` a `/` starts a regex; its quote must not open a string
+    # that swallows the rest of the line.
+    text = "function f(s) {\n  return /'/ .test(s) && eval(payload);\n}\n"
+    strings, _ = code_masks(text, ".js")
+    assert not point_in(strings, text.index("eval"))
+
+
+def test_division_is_not_a_regex():
+    # `total / 2` must not start a regex and swallow the comment/string after it.
+    text = "const half = total / 2; // note\nconst s = 'eval(x)';\n"
+    strings, comments = code_masks(text, ".js")
+    assert point_in(comments, text.index("// note"))
+    assert point_in(strings, text.index("'eval"))
+
+
+def test_regex_char_class_slash_does_not_close():
+    # A `/` inside a regex char class does not terminate the literal.
+    text = "const re = /[/]+/;\nconst s = 'eval(x)';\n"
+    strings, _ = code_masks(text, ".js")
+    assert point_in(strings, text.index("'eval"))
+
+
+# ----------------------------------------------------- doc-level annotations
+def test_doc_level_finding_survives_annotation_on_first_line():
+    # File-level findings anchor at offset 0; an annotation on line 1 must not
+    # silently kill them — they describe the file, not that line.
+    text = (
+        "<!-- aislopfixer: reviewed -->\n"
+        "<p>cutting-edge seamless leverage synergy delve unparalleled</p>\n"
+    )
+    sf = SourceFile(abs_path="hero.html", rel_path="hero.html", text=text)
+    assert "buzzword.density" in [f.rule_id for f in run_file_rules(sf)]
+
+
+def test_todo_match_stops_before_comment_closers():
+    # `{/* TODO: x */}` / `<!-- TODO: x -->`: the match must not swallow the
+    # comment closer — a brief consumer deleting the match would break syntax.
+    from aislopfixer.engine.models import SourceFile
+    from aislopfixer.engine.runner import run_file_rules
+
+    sf = SourceFile(
+        abs_path="App.jsx", rel_path="App.jsx",
+        text="{/* TODO: wire up real CTA */}\n<!-- FIXME: replace hero -->\n",
+    )
+    todos = [f for f in run_file_rules(sf) if f.rule_id == "placeholder.todo"]
+    assert [f.matched_text for f in todos] == [
+        "TODO: wire up real CTA",
+        "FIXME: replace hero",
+    ]

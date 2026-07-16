@@ -32,16 +32,19 @@ _JS_EXT = {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".vue", ".svelte", ".as
 # Targets whose exports we can enumerate with confidence (no SFC magic).
 _VERIFIABLE_EXT = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
 
-# Static import, export-from and require()/import() specifiers.
+# Static import, export-from and require()/import() specifiers. The clause
+# between the keyword and ``from`` may span lines (Prettier wraps long imports)
+# but never contains quotes or semicolons — that bound keeps the lazy match
+# from running away across statements.
 _SPECIFIERS = (
-    re.compile(r"(?m)^[ \t]*import\s+(?:type\s+)?(?:[^'\"\n;]*?\s+from\s+)?(['\"])([^'\"\n]+)\1"),
-    re.compile(r"(?m)^[ \t]*export\s+(?:type\s+)?[^'\"\n;]*?\s+from\s+(['\"])([^'\"\n]+)\1"),
+    re.compile(r"(?m)^[ \t]*import\s+(?:type\s+)?(?:[^'\";]*?\s+from\s+)?(['\"])([^'\"\n]+)\1"),
+    re.compile(r"(?m)^[ \t]*export\s+(?:type\s+)?[^'\";]*?\s+from\s+(['\"])([^'\"\n]+)\1"),
     re.compile(r"\b(?:require|import)\s*\(\s*(['\"])([^'\"\n]+)\1\s*\)"),
 )
 
 # Full import statement with a bindings clause (skips side-effect imports).
 _IMPORT_STMT = re.compile(
-    r"(?m)^[ \t]*import\s+(?:type\s+)?([^'\"\n;]+?)\s+from\s+(['\"])([^'\"\n]+)\2"
+    r"(?m)^[ \t]*import\s+(?:type\s+)?([^'\";]+?)\s+from\s+(['\"])([^'\"\n]+)\2"
 )
 
 _NODE_BUILTINS = frozenset({

@@ -10,10 +10,7 @@ from textual.containers import Vertical
 from textual.widgets import Input, Static
 
 from .base import AdaptiveScreen
-from ..theme import DIM, OK
-
-_BAD = "#f87171"
-_FAINT = "#5b647a"
+from ..theme import BAD, DIM, FAINT, OK
 
 
 class PathScreen(AdaptiveScreen):
@@ -62,8 +59,8 @@ class PathScreen(AdaptiveScreen):
             error.update(t)
             return True
         t = Text()
-        t.append("✗ ", style=f"bold {_BAD}")
-        t.append("no folder at that path yet", style=_FAINT)
+        t.append("✗ ", style=f"bold {BAD}")
+        t.append("no folder at that path yet", style=FAINT)
         error.update(t)
         return False
 
@@ -74,11 +71,11 @@ class PathScreen(AdaptiveScreen):
         raw = self._clean(event.value)
         error = self.query_one("#path-error", Static)
         if not raw:
-            error.update(Text("✗ enter a path", style=_BAD))
+            error.update(Text("✗ enter a path", style=BAD))
             return
         path = Path(raw).expanduser()
         if not path.is_dir():
-            error.update(Text(f"✗ not a folder: {raw}", style=_BAD))
+            error.update(Text(f"✗ not a folder: {raw}", style=BAD))
             return
         self.app.begin_scan(str(path))
 

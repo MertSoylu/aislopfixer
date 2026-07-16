@@ -90,3 +90,68 @@ def test_img_alt_fix_preserves_jsx_braces(tmp_path):
     p.write_text("<img src={cover} />\n", encoding="utf-8")
     assert fixer.apply_fix(_get(_scan(p), "a11y.img_no_alt"), "cover photo")
     assert p.read_text(encoding="utf-8") == '<img alt="cover photo" src={cover} />\n'
+
+
+def test_fix_preserves_lf_line_endings(tmp_path):
+    # On Windows a bare write_text would rewrite the whole file as CRLF.
+    p = tmp_path / "lf.html"
+    p.write_bytes(b"keep\nAs an AI language model, I cannot.\nkeep2\n")
+    assert fixer.apply_fix(_leak(_scan(p)))
+    assert p.read_bytes() == b"keep\nkeep2\n"
+
+
+def test_fix_preserves_crlf_line_endings(tmp_path):
+    p = tmp_path / "crlf.html"
+    p.write_bytes(b"keep\r\nAs an AI language model, I cannot.\r\nkeep2\r\n")
+    assert fixer.apply_fix(_leak(_scan(p)))
+    assert p.read_bytes() == b"keep\r\nkeep2\r\n"
+
+
+def test_annotate_preserves_lf_line_endings(tmp_path):
+    p = tmp_path / "ann.html"
+    p.write_bytes(b"<p>TODO: finish this</p>\n")
+    assert fixer.annotate(_get(_scan(p), "placeholder.todo"))
+    raw = p.read_bytes()
+    assert b"aislopfixer:" in raw
+    assert b"\r\n" not in raw
+
+
+def test_reanchor_updates_shifted_positions(tmp_path):
+    # Deleting line 1 shifts the TODO up; reanchor must move its line/snippet.
+    p = tmp_path / "shift.html"
+    p.write_text(
+        "As an AI language model, hi.\n<p>TODO: later</p>\n", encoding="utf-8"
+    )
+    findings = _scan(p)
+    todo = _get(findings, "placeholder.todo")
+    assert todo.line == 2
+    assert fixer.apply_fix(_leak(findings))
+    fixer.reanchor(findings)
+    assert todo.line == 1
+    assert "TODO" in todo.snippet
+
+
+def test_fix_preserves_bom_and_crlf(tmp_path):
+    # Offsets are computed on BOM-stripped text (utf-8-sig, like the scanner);
+    # the write-back must restore both the BOM and the CRLF endings.
+    p = tmp_path / "leak.html"
+    p.write_bytes("﻿keep\r\nAs an AI language model, x.\r\nkeep2\r\n".encode("utf-8"))
+    text = p.read_text(encoding="utf-8-sig")
+    findings = run_file_rules(SourceFile(abs_path=str(p), rel_path=p.name, text=text))
+    assert fixer.apply_fix(_leak(findings))
+    assert p.read_bytes() == "﻿keep\r\nkeep2\r\n".encode("utf-8")
+
+
+def test_snapshot_and_restore_roundtrip(tmp_path):
+    p = tmp_path / "a.html"
+    original = "﻿hello\r\nworld\r\n".encode("utf-8")
+    p.write_bytes(original)
+    state = fixer.snapshot_file(str(p))
+    assert state is not None
+    p.write_bytes(b"clobbered")
+    assert fixer.restore_file(str(p), state)
+    assert p.read_bytes() == original
+
+
+def test_snapshot_missing_file_returns_none(tmp_path):
+    assert fixer.snapshot_file(str(tmp_path / "nope.html")) is None

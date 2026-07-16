@@ -15,6 +15,16 @@ import argparse
 from . import __version__
 
 
+def _confidence(value: str) -> float:
+    try:
+        f = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid float value: {value!r}")
+    if not 0.0 <= f <= 1.0:
+        raise argparse.ArgumentTypeError("must be in 0..1")
+    return f
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="aislopfixer",
@@ -72,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     head.add_argument(
         "--min-confidence",
-        type=float,
+        type=_confidence,
         default=None,
         metavar="0..1",
         help="Only report findings at or above this confidence "

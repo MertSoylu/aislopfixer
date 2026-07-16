@@ -16,7 +16,8 @@ _CONTAINMENT_CAP = 400
 def _backfill_confidence(findings: list[Finding]) -> list[Finding]:
     """Set each finding's confidence unless a rule already pinned one."""
     for f in findings:
-        f.confidence = f.confidence or score_finding(f)
+        if not f.pinned and not f.confidence:
+            f.confidence = score_finding(f)
     return findings
 
 
@@ -101,8 +102,12 @@ def run_file_rules(sf: SourceFile) -> list[Finding]:
     for rule in FILE_RULES:
         out.extend(rule.scan(sf))
     # Drop findings that live on our own annotation comments — never re-flag
-    # what a previous fix session wrote into the file.
-    out = [f for f in out if not on_annotation_line(sf.text, f.start)]
+    # what a previous fix session wrote into the file. Zero-span findings are
+    # doc-level (density aggregates anchored at offset 0), not "on" any line.
+    out = [
+        f for f in out
+        if f.start == f.end or not on_annotation_line(sf.text, f.start)
+    ]
     out = _backfill_confidence(out)        # confidence first: dedupe keeps the strongest
     out = _drop_contained(_collapse_repeats(_dedupe(out)))
     return corroborate(out)                # boost when AI tells co-occur in this file
