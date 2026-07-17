@@ -8,7 +8,9 @@ TUI and headless mode honor the same config.
 # .aislopfixer.toml
 disable = ["design.emoji_ui", "buzzword.delve"]  # rule-id prefixes to turn off
 ignore = ["legacy/**", "third_party/**"]          # path globs to skip entirely
-fail_on = "error"          # headless exit-code threshold (info|warning|error|never)
+fail_on = "risky"          # headless exit-code gate
+                           #   impact:   broken | risky      (risky = any application problem)
+                           #   severity: info | warning | error | never
 min_confidence = 0.5       # headless reporting floor, 0..1
 ```
 """
@@ -23,7 +25,7 @@ from pathlib import Path
 
 CONFIG_NAME = ".aislopfixer.toml"
 
-_VALID_FAIL_ON = {"info", "warning", "error", "never"}
+_VALID_FAIL_ON = {"broken", "risky", "info", "warning", "error", "never"}
 
 
 @dataclass

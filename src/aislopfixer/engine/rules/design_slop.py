@@ -69,16 +69,25 @@ _TW_ARBITRARY_GRADIENT = re.compile(
 )
 
 # Raw CSS: one linear-gradient() containing both a purple-family and a
-# pink/violet-family stop (Tailwind hexes or CSS color keywords).
+# pink-family stop (Tailwind hexes or CSS color keywords).
 # ``_GINNER`` allows one level of nested parens so ``rgb(139, 92, 246)`` stops
 # do not truncate the match at the first ``)``.
+#
+# The two lookaheads scan from the same position, so the colour lists MUST stay
+# disjoint: while `violet`, `8b5cf6` and `a855f7` sat in both, a single stop
+# satisfied both halves and the rule reported a two-stop "purple→pink" gradient
+# that did not exist — a rainbow (`violet, indigo, blue, green, yellow, orange,
+# red`) and a purple→slate fade both fired, the latter contradicting this
+# module's own promise that brand slate/teal gradients never match. Asserting
+# something false about the source is the fastest way to lose the user's trust
+# in every other finding. Keep the lists disjoint when adding colours.
 _GINNER = r"(?:[^)(\n]|\([^)(\n]*\))*"
 _CSS_GRADIENT = re.compile(
     r"linear-gradient\("
     r"(?=" + _GINNER + r"(?:#(?:8b5cf6|a855f7|7c3aed|6d28d9|6366f1|4f46e5|c084fc|d946ef|"
     r"3b82f6|2563eb)\b|\b(?:purple|violet|blueviolet|mediumpurple)\b))"
-    r"(?=" + _GINNER + r"(?:#(?:ec4899|f472b6|db2777|e879f9|ff00ff|a855f7|8b5cf6)\b"
-    r"|\b(?:pink|hotpink|deeppink|magenta|fuchsia|violet)\b))"
+    r"(?=" + _GINNER + r"(?:#(?:ec4899|f472b6|db2777|e879f9|ff00ff)\b"
+    r"|\b(?:pink|hotpink|deeppink|magenta|fuchsia)\b))"
     + _GINNER + r"\)",
     _I,
 )
@@ -137,12 +146,45 @@ _STOCK_ILLUSTRATION = re.compile(
 _GLASS = re.compile(
     r"\bbackdrop-blur(?:-(?:sm|md|lg|xl|2xl|3xl))?\b"
 )
+# The translucent *surface* of a glass panel. ``border-*/10`` is deliberately
+# absent, for the same reason ``_KIT_PURPLE_ACCENT`` excludes `border-`/`ring-`:
+# a hairline is a hairline, not a surface. Counting it meant an ordinary sticky
+# `border-b border-white/10 backdrop-blur` header *was* glassmorphism — which
+# unlocked a `_KIT_STRONG` family and let a hand-written page score 82% on
+# design.landing_kit. Keep paint here, not edges.
 _GLASS_SURFACE = re.compile(
     r"\bbg-(?:white|black|slate|zinc|neutral|gray)/(?:5|10|20|25|30|40)\b"
-    r"|\bborder-(?:white|black)/(?:5|10|20|25|30)\b"
     r"|background(?:-color)?:\s*rgba?\([^)]{0,40},\s*0?\.\d+\s*\)",
     _I,
 )
+# Blur and surface must be on the *same element* to be glassmorphism. Both used
+# to be file-wide searches, so a blurred header and an unrelated translucent
+# panel 2,839 characters apart paired up. The window stops at a quote or an
+# angle bracket — i.e. at the edge of the class list / style value it started
+# in — but not at a newline, so multi-line `className` blocks still pair.
+_GLASS_NEAR = 120
+_ATTR_BREAK = re.compile(r"[\"'<>]")
+
+
+def _attr_window(text: str, start: int, end: int) -> str:
+    """The text around ``[start, end)`` that shares its attribute value."""
+    head = text[max(0, start - _GLASS_NEAR):start]
+    breaks = list(_ATTR_BREAK.finditer(head))
+    if breaks:
+        head = head[breaks[-1].end():]
+    tail = text[end:end + _GLASS_NEAR]
+    stop = _ATTR_BREAK.search(tail)
+    if stop is not None:
+        tail = tail[:stop.start()]
+    return head + tail
+
+
+def _glass_anchor(text: str) -> re.Match | None:
+    """The first ``backdrop-blur`` that shares its element with a surface."""
+    for m in _GLASS.finditer(text):
+        if _GLASS_SURFACE.search(_attr_window(text, m.start(), m.end())):
+            return m
+    return None
 
 # ----------------------------------------------------------- landing kit signals
 # Each family contributes at most one hit toward the ≥3 threshold.
@@ -154,8 +196,12 @@ _KIT_INTER = re.compile(
     r"|\bimport\s*\{[^}]*\bInter\b[^}]*\}\s*from\s*['\"]next/font/google['\"]",
     _I,
 )
+# Purple as the *paint*: fills, type, gradient stops. `border-`/`ring-` are
+# deliberately absent — a single `border-indigo-500` hairline marking the
+# highlighted pricing card is ordinary Tailwind, not an accent system, and
+# counting it let one stray class unlock the whole kit on human pages.
 _KIT_PURPLE_ACCENT = re.compile(
-    r"\b(?:bg|text|border|ring|from|to|via|fill|stroke)"
+    r"\b(?:bg|text|from|to|via|fill|stroke)"
     r"-(?:purple|violet|indigo|fuchsia)-\d{2,3}\b"
 )
 _KIT_SOFT_RADIUS = re.compile(r"\brounded-(?:2xl|3xl)\b")
@@ -190,12 +236,13 @@ _KIT_STAT_MIN = 2      # metric hits before the stat strip counts as a family
 _KIT_SECTION_MIN = 2   # distinct scaffold comments before they count
 
 # Weak families are everyday human Tailwind/marketing (soft radii, shadows,
-# CTAs, a 3-col grid, "How it works", Inter); strong ones correlate with AI
-# authorship on their own. The kit needs ≥1 strong family in the mix so a
-# generic human marketing page never trips it on weak signals alone.
+# CTAs, a 3-col grid, "How it works", Inter, and the Starter/Team/Enterprise
+# pricing convention); strong ones correlate with AI authorship on their own.
+# The kit needs ≥1 strong family in the mix so a generic human marketing page
+# never trips it on weak signals alone.
 _KIT_STRONG = frozenset({
     "purple_accent", "badge_pill", "glass", "stat_strip",
-    "pricing", "section_comments", "logo_cloud",
+    "section_comments", "logo_cloud",
 })
 
 
@@ -324,15 +371,10 @@ class DesignSlopRule(PatternRule):
         ]
 
     def _glassmorphism(self, sf: SourceFile) -> list[Finding]:
-        """backdrop-blur + translucent surface — glassmorphism cliché."""
-        blurs = list(_GLASS.finditer(sf.text))
-        if not blurs:
+        """backdrop-blur + translucent surface on the same element."""
+        m = _glass_anchor(sf.text)
+        if m is None:
             return []
-        surfaces = list(_GLASS_SURFACE.finditer(sf.text))
-        if not surfaces:
-            return []
-        # Require both families present; report the first blur as the anchor.
-        m = blurs[0]
         return [
             build_finding(
                 sf,
@@ -370,10 +412,9 @@ class DesignSlopRule(PatternRule):
         add("how_it_works", _KIT_HOW_IT_WORKS)
         add("logo_cloud", _KIT_LOGO_CLOUD)
         add("badge_pill", _KIT_BADGE)
-        if _GLASS.search(text) and _GLASS_SURFACE.search(text):
-            m = _GLASS.search(text)
-            assert m is not None
-            signals.append(("glass", m.span()))
+        glass = _glass_anchor(text)
+        if glass is not None:
+            signals.append(("glass", glass.span()))
         # Dual CTA: primary + secondary both present.
         cta1 = _KIT_DUAL_CTA.search(text)
         cta2 = _KIT_SECONDARY_CTA.search(text)

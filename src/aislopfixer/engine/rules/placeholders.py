@@ -30,6 +30,46 @@ _INSTRUCTION = {
     "tbd", "placeholder", "todo", "company", "client", "business", "brand",
 }
 
+# ------------------------------------------------------------------- lorem gate
+# The canonical pseudo-Latin filler vocabulary. Real lorem ipsum is a *run* of
+# these words; an English sentence that merely mentions "lorem ipsum" — a style
+# guide, a design-review note, a CMS doc — is not filler.
+_LOREM_VOCAB = (
+    "lorem|ipsum|dolor|sit|amet|consectetur|adipiscing|elit|sed|do|eiusmod|"
+    "tempor|incididunt|ut|labore|et|dolore|magna|aliqua|enim|ad|minim|veniam|"
+    "quis|nostrud|exercitation|ullamco|laboris|nisi|aliquip|ex|ea|commodo|"
+    "consequat|duis|aute|irure|in|reprehenderit|voluptate|velit|esse|cillum|eu|"
+    "fugiat|nulla|pariatur|excepteur|sint|occaecat|cupidatat|non|proident|sunt|"
+    "culpa|qui|officia|deserunt|mollit|anim|id|est|laborum|at|vero|eos|"
+    "accusamus|iusto|odio|dignissimos|ducimus|blanditiis|praesentium|voluptatum|"
+    "deleniti|atque|corrupti|quos|dolores|quas|molestias|excepturi|occaecati|"
+    "cupiditate|provident|similique|mollitia|animi|dolorem|quia|maxime|placeat|"
+    "facere|possimus|omnis|assumenda|repellendus|temporibus|autem|quibusdam|"
+    "officiis|debitis|necessitatibus|saepe|eveniet|voluptates|repudiandae|"
+    "recusandae|itaque|earum|rerum|hic|tenetur|sapiente|delectus|reiciendis|"
+    "voluptatibus|perferendis|doloribus|asperiores|repellat|perspiciatis|unde|"
+    "totam|rem|aperiam|eaque|ipsa|quae|illo|inventore|veritatis|quasi|"
+    "architecto|beatae|vitae|dicta|explicabo|nemo|voluptatem|aspernatur|aut|"
+    "odit|fugit|magni|ratione|sequi|nesciunt|neque|porro|quisquam|adipisci|"
+    "numquam|modi|tempora|incidunt|magnam|quaerat|minima|nostrum|exercitationem|"
+    "corporis|suscipit|laboriosam|aliquid|commodi|consequatur|vel|eum|iure|quam|"
+    "nihil|molestiae|illum|quo|voluptas"
+)
+
+
+def _is_lorem_filler(m: re.Match, sf: SourceFile) -> bool:
+    """Filler is a *run* of pseudo-Latin, not a mention of the words.
+
+    The tail used to be ``[^<>\\n]*``, which stops at the tag in
+    ``<p>Lorem ipsum …</p>`` and swallows the rest of the line everywhere else.
+    In Markdown the AUTO fix ate "Our designers keep shipping comps with lorem
+    ipsum in the body slots, and stakeholders read it as final copy." down to
+    "Our designers keep shipping comps with" — and reported it as a fix.
+    Counting the Latin run separates filler from prose *about* filler: the
+    canonical opener alone ("Lorem ipsum dolor sit amet") already clears five.
+    """
+    return len(re.findall(r"[A-Za-z]+", m.group(0))) >= 5
+
 
 def _is_prose_placeholder(m: re.Match, sf: SourceFile) -> bool:
     # Markdown link syntax, not a placeholder: a closing ``]`` immediately
@@ -71,12 +111,15 @@ class PlaceholderRule(PatternRule):
     patterns = [
         Pattern(
             id="placeholder.lorem",
-            regex=re.compile(r"\blorem ipsum[^<>\n]*", _I),
+            regex=re.compile(
+                rf"\blorem ipsum\b(?:[\s,;:.—-]+(?:{_LOREM_VOCAB})\b)*[.!?]?", _I
+            ),
             severity=Severity.WARNING,
             fixability=Fixability.AUTO,
             message="Lorem ipsum placeholder text",
             suggested_fix="Remove the placeholder text",
             replacement="",
+            guard=_is_lorem_filler,
         ),
         Pattern(
             id="placeholder.bracket",
@@ -133,10 +176,16 @@ class PlaceholderRule(PatternRule):
         ),
         Pattern(
             id="placeholder.phone",
+            # Digit-bounded: without the lookaround each alternative matched a
+            # *substring* of any longer digit run — "tx 1234567890123456" hit
+            # on "1234567890", and accepting the prompted value would have
+            # spliced a real number into the middle of an unrelated identifier.
             regex=re.compile(
+                r"(?<![\d-])(?:"
                 r"(?:\+?1[\s.-]?)?\(?555\)?[\s.-]?\d{3}[\s.-]?\d{4}"
                 r"|123[\s.-]?456[\s.-]?7890"
                 r"|\+?1234567890"
+                r")(?![\d-])"
             ),
             severity=Severity.WARNING,
             fixability=Fixability.PROMPT,

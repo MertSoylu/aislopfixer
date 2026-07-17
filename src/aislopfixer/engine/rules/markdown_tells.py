@@ -4,7 +4,8 @@ README/CLAUDE/LICENSE-style meta docs are already skipped by the scanner, so thi
 targets prose content files. Matches inside fenced code blocks are ignored
 (tutorials legitimately show these shapes as examples):
 
-* **emoji-prefixed headers** — ``## 🚀 Features`` (AUTO: strip the leading emoji).
+* **emoji-decorated headers** — ``## 🚀 Features``, ``## Features ✨`` (AUTO:
+  strip every decorative emoji in the heading, wherever it sits).
 * **boilerplate sections** — bare ``## Conclusion`` / ``## Key Takeaways`` /
   ``## TL;DR`` headings (end-anchored, so "## Conclusion of the war" is fine).
 * **bold-lead bullet lists** — a run of ``- **Term:** explanation`` items; only
@@ -31,7 +32,16 @@ _EMOJI = (
     "\U0001f1e6-\U0001f1ff✅✨⭐❤]"
 )
 
-_EMOJI_HEADER = re.compile(r"(?m)^#{1,6}[ \t]+(" + _EMOJI + r"(?:️)?[ \t]*)")
+# A heading line, and every decorative emoji *anywhere* inside it. The rule was
+# anchored to `^#{1,6}[ \t]+<emoji>` — only the token right after the hashes —
+# so on "# 🚀 Welcome to Our Platform ✨" --fix stripped the rocket, left the
+# sparkle, re-scanned and reported "no slop found" about a heading with an emoji
+# still plainly in it; a trailing-only emoji was never detected at all. Being
+# told a heading is clean while looking straight at its sparkle is how a user
+# stops believing the other findings. The capture keeps the emoji's trailing
+# space so stripping "🚀 " leaves "# Welcome", never "#Welcome".
+_HEADING_LINE = re.compile(r"(?m)^#{1,6}[ \t]+.*$")
+_HEADING_EMOJI = re.compile("(" + _EMOJI + r"(?:️)?[ \t]*)")
 _BOILERPLATE = re.compile(
     r"(?im)^#{1,6}[ \t]+"
     r"(?:Conclusion|Key Takeaways?|Final Thoughts?|TL;?DR|In Summary|Wrapping Up)"
@@ -71,23 +81,24 @@ class MarkdownTellRule:
 
         out: list[Finding] = []
 
-        for m in _EMOJI_HEADER.finditer(text):
-            if in_fence(m.start()):
+        for head in _HEADING_LINE.finditer(text):
+            if in_fence(head.start()):
                 continue
-            out.append(
-                build_finding(
-                    sf,
-                    rule_id="md.emoji_header",
-                    category=self.category,
-                    severity=Severity.INFO,
-                    message="Decorative emoji in heading — AI docs signature",
-                    start=m.start(1),
-                    end=m.end(1),
-                    fixability=Fixability.AUTO,
-                    suggested_fix="Remove the decorative emoji",
-                    replacement="",
+            for m in _HEADING_EMOJI.finditer(head.group(0)):
+                out.append(
+                    build_finding(
+                        sf,
+                        rule_id="md.emoji_header",
+                        category=self.category,
+                        severity=Severity.INFO,
+                        message="Decorative emoji in heading — AI docs signature",
+                        start=head.start() + m.start(1),
+                        end=head.start() + m.end(1),
+                        fixability=Fixability.AUTO,
+                        suggested_fix="Remove the decorative emoji",
+                        replacement="",
+                    )
                 )
-            )
 
         for m in _BOILERPLATE.finditer(text):
             if in_fence(m.start()):

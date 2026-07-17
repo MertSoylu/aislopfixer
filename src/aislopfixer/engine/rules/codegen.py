@@ -118,6 +118,21 @@ _CATCH_RETURN_DEFAULT = re.compile(
     r"|\.catch\s*\(\s*(?:\(\s*[\w$]*\s*\)|[\w$]+)\s*=>\s*(?:null|undefined|false|\[\s*\]|\(\s*\{\s*\}\s*\))\s*\)"
 )
 
+# A catch that does not even *bind* the error and returns a boolean is asking
+# "did that throw?" — a capability probe, which is the correct implementation of
+# feature detection rather than a swallowed failure:
+#
+#     try { window.localStorage.setItem("__probe__", "1"); return true; }
+#     catch { return false; }
+#
+# _EMPTY_CATCH exempts a documented catch for exactly this reason; without the
+# same escape here the canonical localStorage probe was reported RISKY at 62%.
+_PROBE_CATCH = re.compile(r"\bcatch\s*\{\s*return\s+(?:false|true)\s*;?\s*\}")
+
+
+def _not_a_probe(m: re.Match, sf: SourceFile) -> bool:
+    return _PROBE_CATCH.fullmatch(m.group(0)) is None
+
 _RESTATE = re.compile(
     r"(?im)^[ \t]*//+\s*(?:"
     r"(?:initialize|define|declare|create|set|setup|set\s+up)\s+"
@@ -255,13 +270,14 @@ class CodeGenRule(PatternRule):
         Pattern(
             id="codegen.catch_return_default",
             regex=_CATCH_RETURN_DEFAULT,
-            severity=Severity.WARNING,
+            severity=Severity.INFO,
             fixability=Fixability.MANUAL,
             message="Catch returns a literal default — failure is silently masked",
             suggested_fix="Surface the error, or make the fallback explicit and logged",
             kinds=frozenset({"code", "jsx", "html"}),
             exclude_strings=True,
             exclude_comments=True,
+            guard=_not_a_probe,
         ),
         Pattern(
             id="codegen.log_only_catch",

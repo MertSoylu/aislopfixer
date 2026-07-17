@@ -15,7 +15,9 @@ inputs:
     default: "."
   fail-on:
     description: >-
-      Minimum severity that fails the job: info, warning, error or never.
+      What fails the job. Impact gates: risky (any application problem —
+      recommended) or broken (only code that does not work). Severity gates:
+      info, warning, error. never always passes.
       Empty uses the project's .aislopfixer.toml (default: warning).
     required: false
     default: ""

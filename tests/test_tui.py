@@ -114,8 +114,10 @@ async def test_help_modal_opens_and_closes(tmp_path):
         assert app.screen.__class__.__name__ == "ResultsScreen"
 
 
-async def test_results_hint_teaches_the_fix_brief(tmp_path):
-    # a manual-only finding: the hint must point at `x` / the AI fix brief
+async def test_results_hint_leads_on_the_impact_split(tmp_path):
+    # a manual-only finding: the hint leads on what is at stake, and `x` is
+    # taught by the footer — the hint is no_wrap and a tail about the fix brief
+    # was simply cut off at 80 columns.
     (tmp_path / "app.js").write_text(
         "const q = `SELECT * FROM users WHERE id = ${userId}`;\n",
         encoding="utf-8",
@@ -126,8 +128,53 @@ async def test_results_hint_teaches_the_fix_brief(tmp_path):
         screen = app.screen
         assert screen.query_one("#results-hint") is not None
         hint = screen._brief_hint().plain
-        assert "AI fix brief" in hint
-        assert "need judgement" in hint
+        assert "1 application problem(s)" in hint
+        assert len(hint) <= 78, f"must survive an 80-col terminal: {hint!r}"
+        assert any(
+            b.key == "x" and b.show for b in screen.BINDINGS
+        ), "the footer is what teaches x now"
+
+
+async def test_results_hint_separates_problems_from_warnings(tmp_path):
+    """The headline is application problems — buzzwords must not pad the count."""
+    (tmp_path / "index.html").write_text(
+        "<p>Our cutting-edge, seamless, world-class platform.</p>\n"
+        '<a href="#">Get started</a>\n',
+        encoding="utf-8",
+    )
+    app = AISlopFixerApp(initial_path=str(tmp_path))
+    async with app.run_test() as pilot:
+        await _begin_scan(pilot)
+        screen = app.screen
+        findings = screen._findings
+        hint = screen._brief_hint().plain
+    # placeholder.dead_href is the only application problem here; the three
+    # buzzwords are warnings and must be counted separately.
+    problems = [f for f in findings if f.impact.is_application]
+    assert {f.rule_id for f in problems} == {"placeholder.dead_href"}
+    assert "1 application problem(s)" in hint
+    assert "simple warning(s)" in hint
+
+
+async def test_results_tree_tags_problems_and_sorts_them_first(tmp_path):
+    """A BROKEN finding outranks a higher-confidence buzzword in the same file."""
+    (tmp_path / "index.html").write_text(
+        "<p>Our cutting-edge, seamless, world-class, best-in-class platform "
+        "will revolutionize and supercharge your synergy.</p>\n",
+        encoding="utf-8",
+    )
+    app = AISlopFixerApp(initial_path=str(tmp_path))
+    async with app.run_test() as pilot:
+        await _begin_scan(pilot)
+        screen = app.screen
+        buzz = next(f for f in screen._findings if f.rule_id.startswith("buzzword."))
+        # POLISH findings carry no tag — an untagged row *is* the "just taste"
+        # signal, so a tag on every row would mark nothing.
+        assert "BROKEN" not in screen._leaf_label(buzz).plain
+        assert "RISKY" not in screen._leaf_label(buzz).plain
+        detail = screen._detail(buzz).plain
+        assert "POLISH" in detail
+        assert "not a defect" in detail
 
 
 async def test_confidence_floor_cycles_and_filters(tmp_path):
@@ -418,3 +465,43 @@ async def test_bulk_fix_fixpoint_reports_unmasked_finding(tmp_path):
         assert "md.boilerplate_section" in rules
     text = (tmp_path / "notes.md").read_text(encoding="utf-8")
     assert text.startswith("# Conclusion")
+
+
+async def test_summary_counters_are_actually_visible(tmp_path):
+    """`height: 3` could not fit 4 rows of chrome, so the content box was 0.
+
+    The four headline counters rendered as a blank gap between two rules — on
+    the last screen of the flow, and in the committed README screenshot.
+    """
+    (tmp_path / "index.html").write_text(
+        "<p>Our seamless, cutting-edge platform.</p>\n", encoding="utf-8"
+    )
+    app = AISlopFixerApp(initial_path=str(tmp_path))
+    async with app.run_test() as pilot:
+        await _begin_scan(pilot)
+        await pilot.press("q")
+        await pilot.pause(0.2)
+        assert app.screen.__class__.__name__ == "SummaryScreen"
+        strip = app.screen.query_one("#summary-counters")
+        assert strip.size.height > 0, "the counters strip collapsed to zero rows"
+        for wid in ("#s-found", "#s-fixed", "#s-skip", "#s-left"):
+            assert app.screen.query_one(wid).size.height > 0, wid
+
+
+async def test_summary_and_results_agree_on_the_axis(tmp_path):
+    """Both screens must lead on the impact split, not two different counts."""
+    (tmp_path / "index.html").write_text(
+        "<p>Our seamless, cutting-edge, world-class platform.</p>\n"
+        '<a href="#">Get started</a>\n',
+        encoding="utf-8",
+    )
+    app = AISlopFixerApp(initial_path=str(tmp_path))
+    async with app.run_test() as pilot:
+        await _begin_scan(pilot)
+        hint = app.screen._brief_hint().plain
+        await pilot.press("q")
+        await pilot.pause(0.2)
+        summary = app.screen._impact_line().plain
+        problems = sum(1 for f in app.screen._findings if f.impact.is_application)
+        assert f"{problems} application problem(s)" in hint
+        assert f"{problems} application problem(s)" in summary

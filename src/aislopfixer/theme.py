@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import colorsys
 
-from .engine.models import Category, Severity
+from .engine.models import Category, Impact, Severity
 
 CATEGORY_COLORS: dict[Category, str] = {
     Category.SECURITY: "#ff4d4d",
@@ -42,6 +42,30 @@ SEVERITY_ICON: dict[Severity, str] = {
 
 FIX_ICON: dict[str, str] = {"auto": "⚡", "prompt": "✎", "manual": "⚑"}
 FIX_COLOR: dict[str, str] = {"auto": "#4ade80", "prompt": "#7dd3fc", "manual": "#7b8496"}
+
+# Impact is the axis the user acts on, so it is spelled out rather than given a
+# glyph to learn — and only the application problems carry a tag at all, which
+# is what makes them findable in a tree that is mostly POLISH.
+IMPACT_LABEL: dict[Impact, str] = {
+    Impact.BROKEN: "BROKEN",
+    Impact.RISKY: "RISKY",
+    Impact.POLISH: "",
+}
+
+IMPACT_COLORS: dict[Impact, str] = {
+    Impact.BROKEN: "#f87171",
+    Impact.RISKY: "#fbbf24",
+    Impact.POLISH: "#7b8496",
+}
+
+# One plain sentence per impact for the detail pane. "manual review" told the
+# user nothing: it was the same words for an SQL injection and for the word
+# "seamless". This says which one they are looking at.
+IMPACT_BLURB: dict[Impact, str] = {
+    Impact.BROKEN: "this code does not work as written — fix before shipping",
+    Impact.RISKY: "it runs, but ships a real hazard",
+    Impact.POLISH: "voice and aesthetics — a simple warning, not a defect",
+}
 
 # Core design tokens — every screen/widget should pull colors from here so the
 # palette stays coherent (screens must not re-declare their own hex constants).

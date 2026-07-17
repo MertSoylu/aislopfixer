@@ -200,15 +200,37 @@ class ExportModal(ModalScreen[str | None]):
         ("a", "All three at once"),
     ]
 
-    def __init__(self, n_open: int) -> None:
+    def __init__(self, n_open: int, n_problems: int | None = None) -> None:
         super().__init__()
         self._n_open = n_open
+        self._n_problems = n_problems
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box"):
             yield Static(f"⇩  EXPORT {self._n_open} OPEN FINDING(S)", id="modal-title")
+            if self._n_problems is not None:
+                yield Static(self._scope(), id="modal-sub")
             yield Static(self._body(), id="help-body")
             yield Static("Files land in .aislopfixer/  ·  Esc to cancel", id="modal-hint")
+
+    def _scope(self) -> Text:
+        """What the brief actually contains — the picker should not oversell it."""
+        rest = self._n_open - self._n_problems
+        t = Text(no_wrap=True, overflow="ellipsis")
+        if self._n_problems:
+            t.append("Brief details the ", style=DIM)
+            t.append(f"{self._n_problems} application problem(s)", style=f"bold {ACCENT}")
+            if rest:
+                t.append(f" and sums up the {rest} simple warning(s).", style=DIM)
+            else:
+                t.append(".", style=DIM)
+        else:
+            t.append(
+                f"No application problems — the brief sums up all {rest} "
+                "warning(s) as a copy/design pass.",
+                style=DIM,
+            )
+        return t
 
     def _body(self) -> Text:
         t = Text()

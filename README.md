@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Current version: 0.5.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer)
+**Current version: 0.6.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer)
 
 AI-generated code ships with a recognizable class of defects — and they are not the old "As an AI language model…" giveaways. Today's models hallucinate package imports that break your build (and invite [slopsquatting](https://en.wikipedia.org/wiki/Slopsquatting) attacks), wrap everything in `try/catch` and silently swallow the error, store JWTs in `localStorage`, build SQL with template literals, leave `// ... rest of the code ...` elision markers behind, and coat every landing page in "It's not just a tool — it's a game changer" prose.
 
@@ -149,7 +149,7 @@ pre-commit:
 ```yaml
 repos:
   - repo: https://github.com/mertsoylu/aislopfixer
-    rev: v0.3.0
+    rev: v0.6.0
     hooks:
       - id: aislopfixer
 ```
@@ -205,13 +205,12 @@ Rules self-register via `@file_rule` / `@cross_rule` decorators; most are declar
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest                            # 275 tests
+pytest                              # full suite (pythonpath=src via pyproject)
 PYTHONPATH=src python -m bench.run  # calibration: recall + clean-FP metrics
 PYTHONPATH=src python scripts/shots.py  # regenerate the README screenshots
 ```
 
-Stack: Python ≥ 3.11, [Textual](https://textual.textualize.io/) ≥ 0.80.
+Stack: Python ≥ 3.11, [Textual](https://textual.textualize.io/) ≥ 0.80. End users install via npm (above); the launcher manages the Python env.
 
 ## License
 

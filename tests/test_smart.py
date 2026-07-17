@@ -294,3 +294,133 @@ def test_repeated_company_collapsed_per_file():
     text = "<p>Acme Corp builds tools. Acme Corp ships fast. Trust Acme Corp.</p>\n"
     company = [x for x in run_file_rules(sf(text)) if x.rule_id == "placeholder.company"]
     assert len(company) == 1
+
+
+# ------------------------------------- destructive auto-fixes must not destroy
+def _ids(findings, prefix: str):
+    return [x for x in findings if x.rule_id.startswith(prefix)]
+
+
+def test_ai_leak_sharing_a_line_with_code_is_never_auto_deleted():
+    """The AUTO fix deletes the *line*, so it may only own the line.
+
+    `expand_line=True` + `replacement=""` was unconditional: on this input
+    `--fix` deleted the whole `return` statement at 97% confidence, left a
+    component that renders nothing, and reported "no slop found — fixed
+    automatically".
+    """
+    text = (
+        "export function Panel({ name }) {\n"
+        '  return <p className="note">Hi {name} — as an AI language model, '
+        "I cannot browse the web.</p>;\n"
+        "}\n"
+    )
+    leaks = _ids(run_file_rules(sf(text, "Panel.jsx")), "ai_leak.strong")
+    assert leaks, "the leak itself must still be reported"
+    for f in leaks:
+        assert f.fixability is Fixability.MANUAL
+        assert "return" not in f.matched_text
+
+
+def test_ai_leak_owning_its_line_still_auto_deletes_the_line():
+    text = "<p>As an AI language model, I cannot provide financial advice.</p>\n"
+    leaks = _ids(run_file_rules(sf(text)), "ai_leak.strong")
+    assert len(leaks) == 1
+    assert leaks[0].fixability is Fixability.AUTO
+    assert leaks[0].matched_text == text.rstrip("\n")  # the whole line goes
+
+
+def test_prose_about_lorem_ipsum_is_not_lorem_ipsum():
+    """`[^<>\n]*` ate to end-of-line outside HTML, AUTO-deleting real writing."""
+    text = (
+        "Our designers keep shipping comps with lorem ipsum in the body slots, "
+        "and stakeholders read it as final copy.\n\n"
+        "Decision: lorem ipsum is banned in any comp that goes to a client.\n"
+    )
+    assert not _ids(run_file_rules(sf(text, "notes.md")), "placeholder.lorem")
+
+
+def test_real_lorem_filler_still_auto_stripped():
+    text = "<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>\n"
+    hits = _ids(run_file_rules(sf(text)), "placeholder.lorem")
+    assert len(hits) == 1
+    assert hits[0].fixability is Fixability.AUTO
+    assert hits[0].matched_text.startswith("Lorem ipsum dolor sit amet")
+    assert "</p>" not in hits[0].matched_text
+
+
+def test_placeholder_phone_needs_digit_boundaries():
+    """Without them the pattern matched a substring of any longer digit run."""
+    for text in ("tx 1234567890123456\n", "order 8005551234 shipped\n"):
+        assert not _ids(run_file_rules(sf(text, "x.js")), "placeholder.phone"), text
+    assert _ids(run_file_rules(sf("<p>Call 555-123-4567</p>\n")), "placeholder.phone")
+
+
+# ------------------------------------------------- legitimate human web pages
+def test_hand_written_page_with_a_blurred_header_is_not_a_landing_kit():
+    """A hairline border is not a glass surface; a blur is not a glass panel.
+
+    This exact page — sticky blurred header, two product cards, no purple, no
+    CTA, no hero, no metrics — scored 82% design.landing_kit / 89 slop.
+    """
+    text = (
+        '<header class="sticky top-0 z-40 border-b border-white/10 backdrop-blur">\n'
+        '  <nav class="flex gap-6 px-6 py-4"><a href="/beans">Beans</a></nav>\n'
+        "</header>\n"
+        '<main class="px-6 py-10">\n'
+        '  <h1 class="text-3xl font-semibold">Bristol-roasted coffee since 1998</h1>\n'
+        '  <div class="rounded-2xl border border-white/10 p-6 shadow-xl">\n'
+        "    <h2>Ethiopia Guji</h2><p>Washed, roasted for filter. 250g.</p></div>\n"
+        '  <div class="rounded-2xl border border-white/10 p-6 shadow-xl">\n'
+        "    <h2>Brazil Cerrado</h2><p>Natural, roasted for espresso. 250g.</p></div>\n"
+        "</main>\n"
+    )
+    found = run_file_rules(sf(text, "shop.html"))
+    assert not _ids(found, "design.landing_kit")
+    assert not _ids(found, "design.glassmorphism")
+
+
+def test_glass_needs_blur_and_surface_on_the_same_element():
+    apart = '<header class="backdrop-blur"></header>\n<div class="bg-white/10"></div>\n'
+    assert not _ids(run_file_rules(sf(apart)), "design.glassmorphism")
+    together = '<nav class="backdrop-blur-md bg-white/10">Nav</nav>\n'
+    assert _ids(run_file_rules(sf(together)), "design.glassmorphism")
+
+
+def test_gradient_colour_lists_stay_disjoint():
+    """One stop must not satisfy both halves of a "purple→pink" claim."""
+    for css in (
+        ".a { background: linear-gradient(to right, violet, orange); }\n",
+        ".b { background: linear-gradient(to right, violet, indigo, blue, red); }\n",
+        ".c { background: linear-gradient(90deg, #8b5cf6, #0f172a); }\n",
+        ".d { background: linear-gradient(180deg, #a855f7 0%, transparent 100%); }\n",
+    ):
+        assert not _ids(run_file_rules(sf(css, "brand.css")), "design.gradient_cliche"), css
+    real = ".hero { background: linear-gradient(135deg, #8b5cf6, #ec4899); }\n"
+    assert _ids(run_file_rules(sf(real, "hero.css")), "design.gradient_cliche")
+
+
+def test_cli_usage_placeholders_are_not_leaked_credentials():
+    """`<token>` is how every CLI documents a required argument."""
+    text = (
+        "# mycli\n\n    mycli auth login <token>\n\n"
+        "Pass it as `<token>`; the client stores it in the keychain.\n\n"
+        "    mycli deploy <key> --region eu-west-2\n"
+    )
+    assert not _ids(run_file_rules(sf(text, "cli.md")), "secret.")
+    # The real shape — a possessive placeholder — still reports.
+    assert _ids(run_file_rules(sf('const t = "<your-token>";\n', "a.js")), "secret.")
+
+
+def test_feature_detection_probe_is_not_a_swallowed_failure():
+    """`catch { return false; }` asks "did it throw?" — that is the answer."""
+    text = (
+        "export function hasLocalStorage(): boolean {\n"
+        '  try { window.localStorage.setItem("__p__", "1"); return true; }\n'
+        "  catch { return false; }\n"
+        "}\n"
+    )
+    assert not _ids(run_file_rules(sf(text, "storage.ts")), "codegen.catch_return_default")
+    # A bound error swallowed into a null default still reports.
+    swallow = "try { load(); } catch (e) { return null; }\n"
+    assert _ids(run_file_rules(sf(swallow, "x.js")), "codegen.catch_return_default")

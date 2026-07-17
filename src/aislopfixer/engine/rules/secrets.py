@@ -41,11 +41,18 @@ _NOUN = (
     r"(?:api[_\-]?key|secret(?:[_\-]?key)?|access[_\-]?token|client[_\-]?secret|"
     r"auth[_\-]?token|private[_\-]?key|token|password|passwd|credentials?|key)"
 )
+# The angle-bracket form requires the possessive prefix — `<your-token>`, not a
+# bare `<token>`. `<token>`/`<key>` is the universal notation for a required CLI
+# *argument*, so `mycli auth login <token>` in a docs page was reported as a
+# leaked credential at 85% RISKY, telling the user to "rotate this credential"
+# about a usage string. The real case this branch existed for — `token =
+# "<token>"` — is still caught by `secret.assignment` below, which has the
+# assignment context this one lacks.
 _PLACEHOLDER_TOKEN = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
     r"(?:your|insert|replace|add|change|my)[_\-](?:own[_\-])?" + _NOUN + r"(?:[_\-]here)?"
     r"|" + _NOUN + r"[_\-](?:goes[_\-])?here"
-    r"|<(?:your[_\- ]?)?" + _NOUN + r">"
+    r"|<(?:your|my|insert|replace)[_\- ]?" + _NOUN + r">"
     r")(?![A-Za-z0-9_])",
     _I,
 )

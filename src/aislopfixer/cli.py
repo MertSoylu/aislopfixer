@@ -75,10 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     head.add_argument(
         "--fail-on",
-        choices=["info", "warning", "error", "never"],
+        choices=["broken", "risky", "info", "warning", "error", "never"],
         default=None,
-        help="Minimum severity that makes the exit code 1 "
-        "(default: .aislopfixer.toml, else warning).",
+        help="What makes the exit code 1. Impact gates: 'risky' = any "
+        "application problem (recommended for CI), 'broken' = only code that "
+        "does not work. Severity gates: info/warning/error. 'never' always "
+        "exits 0. (default: .aislopfixer.toml, else warning).",
     )
     head.add_argument(
         "--min-confidence",

@@ -180,3 +180,76 @@ def test_bom_file_line_one_is_scanned(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == 1
     assert "x.js:1:1" in out and "merge.conflict_marker" in out
+
+
+# ------------------------------------------------------- the --fail-on gate
+def test_fail_on_risky_ignores_the_polish_tail(tmp_path, capsys):
+    """A page whose only sin is adjectives must not turn CI red.
+
+    19 POLISH rules carry severity=warning, so under the default severity gate
+    a zero-defect marketing page exited 1 — while the tool's own fix brief told
+    the agent those were "simple warnings… do not spend this pass on them".
+    """
+    (tmp_path / "index.html").write_text(
+        "<h1>A seamless, robust and scalable platform</h1>\n"
+        "<p>Our cutting-edge solution leverages best-in-class technology to "
+        "deliver a seamless experience. Unlock the power of a robust, scalable "
+        "and innovative platform that is truly game-changing.</p>\n",
+        encoding="utf-8",
+    )
+    assert main([str(tmp_path), "--check"]) == 1          # severity gate: red
+    capsys.readouterr()
+    assert main([str(tmp_path), "--check", "--fail-on", "risky"]) == 0
+    capsys.readouterr()
+
+
+def test_fail_on_impact_gates_separate_risky_from_broken(tmp_path, capsys):
+    (tmp_path / "app.js").write_text(
+        "const q = `SELECT * FROM users WHERE id = ${userId}`;\n", encoding="utf-8"
+    )
+    assert main([str(tmp_path), "--check", "--fail-on", "risky"]) == 1
+    capsys.readouterr()
+    assert main([str(tmp_path), "--check", "--fail-on", "broken"]) == 0  # runs fine
+    capsys.readouterr()
+
+    (tmp_path / "gone.js").write_text(
+        "export function boot() {\n  // ... rest of the code ...\n}\n", encoding="utf-8"
+    )
+    assert main([str(tmp_path), "--check", "--fail-on", "broken"]) == 1
+    capsys.readouterr()
+
+
+# ------------------------------------------------------------------ encoding
+def test_machine_output_is_utf8_on_a_legacy_codepage_stream(tmp_path):
+    """JSON/SARIF are UTF-8 by spec — never the console codepage.
+
+    On a cp1252 stream an em-dash went out as a raw 0x97, so the artifact this
+    tool advertises as its CI path was not valid UTF-8 and would not parse.
+    """
+    import io
+    import json as _json
+
+    from aislopfixer.headless import run_check
+
+    _slop_project(tmp_path)
+    for kw in ({"as_json": True}, {"as_sarif": True}):
+        buf = io.BytesIO()
+        stream = io.TextIOWrapper(buf, encoding="cp1252", errors="replace", newline="")
+        run_check(str(tmp_path), use_store=False, stream=stream, **kw)
+        stream.flush()
+        _json.loads(buf.getvalue().decode("utf-8"))  # raises if not UTF-8 / not JSON
+
+
+def test_ascii_degrade_is_per_character(tmp_path):
+    """One unencodable character must not degrade the whole document."""
+    import io
+
+    from aislopfixer.headless import _fit_encoding
+
+    class Stream(io.StringIO):
+        encoding = "cp1252"
+
+    # cp1252 has an em-dash: keep it, even next to a character it cannot encode.
+    assert _fit_encoding("a — b \U0001f680 c", Stream()).startswith("a — b ")
+    # cp1252 has no arrow: that one degrades.
+    assert _fit_encoding("done → yes", Stream()) == "done -> yes"

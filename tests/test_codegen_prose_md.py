@@ -109,6 +109,33 @@ def test_emoji_header_skipped_in_fence():
     assert "md.emoji_header" not in ids("```\n## 🚀 Features\n```\n", "doc.md")
 
 
+def _emoji_headers(text: str):
+    from aislopfixer.engine.models import SourceFile
+    from aislopfixer.engine.runner import run_file_rules
+
+    sf = SourceFile(abs_path="doc.md", rel_path="doc.md", text=text)
+    return [f for f in run_file_rules(sf) if f.rule_id == "md.emoji_header"]
+
+
+def test_emoji_header_matches_anywhere_in_the_heading():
+    """The rule was anchored to the token right after the hashes.
+
+    So --fix stripped the leading emoji, left the trailing one, re-scanned and
+    reported "no slop found" about a heading with a sparkle plainly still in
+    it; a trailing-only emoji was never detected at all.
+    """
+    assert len(_emoji_headers("# 🚀 Welcome to Our Platform ✨\n")) == 2
+    assert _emoji_headers("# Welcome to Our Platform ✨\n"), "trailing-only must report"
+
+
+def test_emoji_header_fix_converges_to_a_clean_heading():
+    text = "# 🚀 Welcome ✨\n"
+    for f in sorted(_emoji_headers(text), key=lambda f: f.start, reverse=True):
+        text = text[: f.start] + text[f.end :]
+    assert text == "# Welcome \n"  # never "#Welcome" — the heading survives
+    assert not _emoji_headers(text)
+
+
 def test_boilerplate_section_end_anchored():
     assert "md.boilerplate_section" in ids("## Conclusion\n", "doc.md")
     assert "md.boilerplate_section" not in ids("## Conclusion of the war\n", "doc.md")

@@ -243,8 +243,15 @@ ScanScreen {
     padding: 0 1;
     margin-top: 1;
 }
+/* min-width, because 38% of a classic 80-col terminal is 25 columns and a leaf
+   label needs more than that: "▲ RISKY Placeholder javascript:void(0) link L22"
+   truncated to "▲  RISKY    Placehold", so three consecutive findings rendered
+   as the same row and the tree stopped being a way to tell them apart. Below
+   ~110 cols the detail pane gives up the space instead — it is scrollable prose
+   and degrades gracefully, where a tree of identical rows does not. */
 #tree {
     width: 38%;
+    min-width: 38;
     height: 100%;
     border: round #232a38;
     border-title-color: #7b8496;
@@ -326,8 +333,12 @@ SummaryScreen {
     width: 100%;
     content-align: center middle;
 }
+/* auto, not a fixed height: the CountUp children are two rows ("18\nFOUND")
+   and the borders + padding cost four more, so `height: 3` clamped the content
+   box to zero and the four headline counters rendered as a blank gap between
+   two rules — on the last screen of the flow, and in the README screenshot. */
 #summary-counters {
-    height: 3;
+    height: auto;
     margin: 1 0;
     border-top: solid #232a38;
     border-bottom: solid #232a38;

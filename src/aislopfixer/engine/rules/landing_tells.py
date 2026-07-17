@@ -9,8 +9,12 @@ there too), this module targets the page *recipe* current models converge on:
   ``design.fake_social_proof`` ("Trusted by 10,000+ developers") are skipped so
   the same span is never flagged twice.
 * **pricing triad cliché** — a "Most Popular"/"Best Value" badge + per-month
-  pricing + an Enterprise/contact-sales tier, all in one file. Each element is
-  common alone; the trio is the stock SaaS pricing card.
+  pricing + an Enterprise/contact-sales tier, all in one file. The trio is the
+  stock SaaS pricing card — but it is also how Stripe, Linear and every other
+  real pricing page is built, so on its own it is not evidence of anything.
+  It fires only when the file carries another landing tell alongside it
+  (:func:`LandingTellRule._other_tells`); a hand-written pricing section stays
+  quiet, while the same triad inside a generated page still reports.
 * **section recipe** — ``<!-- Hero Section -->`` / ``{/* Testimonials */}``
   scaffold comments. Three or more distinct stock section names is a generated
   page skeleton; Header/Main/Footer never count.
@@ -157,9 +161,11 @@ class LandingTellRule(PatternRule):
         if kind in ("html", "jsx", "md"):
             out.extend(self._fake_metrics(sf, kind))
         if kind in ("html", "jsx"):
-            out.extend(self._pricing_triad(sf, kind))
             out.extend(self._section_recipe(sf))
             out.extend(self._fake_logo_cloud(sf, kind))
+            # Order matters: the triad needs to know whether anything else in
+            # this file tells on itself, so it runs after the rules that do.
+            out.extend(self._pricing_triad(sf, kind, corroborated=bool(out)))
         return out
 
     def _fake_metrics(self, sf: SourceFile, kind: str) -> list[Finding]:
@@ -185,8 +191,18 @@ class LandingTellRule(PatternRule):
             for a, b in spans
         ]
 
-    def _pricing_triad(self, sf: SourceFile, kind: str) -> list[Finding]:
-        """Badge + per-month price + Enterprise tier — the stock pricing card."""
+    def _pricing_triad(
+        self, sf: SourceFile, kind: str, *, corroborated: bool
+    ) -> list[Finding]:
+        """Badge + per-month price + Enterprise tier — the stock pricing card.
+
+        Gated on ``corroborated``: the triad describes every real pricing page
+        ever built (Starter/Team/Enterprise, "Most popular", per-month), so
+        alone it is a description, not a detection. Only when the file already
+        tells on itself some other way does the triad add information.
+        """
+        if not corroborated:
+            return []
         text = sf.text
         regions = prose_regions(text, kind)
 

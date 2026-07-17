@@ -33,6 +33,33 @@ class Fixability(Enum):
     MANUAL = "manual"  # flag only, cannot be auto-fixed
 
 
+class Impact(Enum):
+    """What *kind of work* a finding is, independent of how it is fixed.
+
+    ``Fixability`` says *how* (auto / ask for a value / by hand); ``Impact``
+    says *what is at stake*. Both an SQL injection and the word "seamless" are
+    ``MANUAL``, and treating them alike is what buries the real defects among
+    the nits. ``BROKEN`` + ``RISKY`` are the "application problems" a coding
+    agent should be pointed at; ``POLISH`` is the simple-warning tail.
+
+    Assigned centrally from a ``rule_id`` prefix table — see
+    :data:`engine.scoring.IMPACT_OVERRIDE`. Rules never set it themselves.
+    """
+
+    BROKEN = "broken"  # the code does not work / is incomplete — a ship blocker
+    RISKY = "risky"    # it runs, but ships a real hazard (security, fake data)
+    POLISH = "polish"  # taste: voice, aesthetics, tidiness — a simple warning
+
+    @property
+    def rank(self) -> int:
+        return {"polish": 0, "risky": 1, "broken": 2}[self.value]
+
+    @property
+    def is_application(self) -> bool:
+        """True for the findings worth a coding agent's attention."""
+        return self is not Impact.POLISH
+
+
 class Status(Enum):
     OPEN = "open"
     FIXED = "fixed"
@@ -79,3 +106,17 @@ class Finding:
     def key(self) -> str:
         """Stable identifier for UI node keys."""
         return f"{self.file}:{self.start}:{self.rule_id}"
+
+    @property
+    def impact(self) -> Impact:
+        """What kind of work this finding is — see :class:`Impact`.
+
+        Derived, not stored: unlike ``confidence`` (which rules may pin and
+        which scoring corroborates and demotes), impact is a fixed property of
+        the rule itself and nothing ever adjusts it per finding. Computing it
+        on read means it can never be stale or forgotten on a hand-built
+        Finding. Imported lazily — ``scoring`` imports this module.
+        """
+        from .scoring import impact_of
+
+        return impact_of(self.rule_id)

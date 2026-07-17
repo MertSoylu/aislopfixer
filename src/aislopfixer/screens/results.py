@@ -35,6 +35,9 @@ from ..theme import (
     FAINT,
     FIX_COLOR,
     FIX_ICON,
+    IMPACT_BLURB,
+    IMPACT_COLORS,
+    IMPACT_LABEL,
     MUTED,
     OK,
     SEVERITY_COLORS,
@@ -45,6 +48,10 @@ from ..theme import (
 )
 
 _HELP_ROWS: list[tuple[str, str]] = [
+    ("WHAT THE TAGS MEAN", ""),
+    ("BROKEN", "This code does not work as written — fix before shipping"),
+    ("RISKY", "It runs, but ships a real hazard (sink, dead link, fake data)"),
+    ("·", "Untagged: a simple warning — voice/aesthetics, not a defect"),
     ("ACT ON A FINDING", ""),
     ("f", "Fix it (auto, or prompts you for the real value)"),
     ("d", "Preview the exact diff the fix would make"),
@@ -55,7 +62,7 @@ _HELP_ROWS: list[tuple[str, str]] = [
     ("BULK & EXPORT", ""),
     ("p", "Apply every high-confidence automatic fix at once"),
     ("s i", "On a category/file row: skip / not-slop the whole branch"),
-    ("x", "Export: AI fix brief / JSON / SARIF (into .aislopfixer/)"),
+    ("x", "AI fix brief: details BROKEN/RISKY, sums up the warnings"),
     ("VIEW & FILTER", ""),
     ("1 2 3", "Show only errors / warnings / info (again to clear)"),
     ("0", "Clear the severity filter"),
@@ -72,15 +79,21 @@ class ResultsScreen(AdaptiveScreen):
     MIN_WIDTH = 80
     MIN_HEIGHT = 20
 
+    # Only six bindings are shown: the footer drops whatever overflows, and it
+    # needed ~110 columns for nine — so at a classic 80x24 the last two silently
+    # vanished, and the last two were `? Help` and `q Summary`. Help must not be
+    # undiscoverable at exactly the size where the tree is hardest to read.
+    # d/a/i stay off the footer because the detail pane's action hint already
+    # offers them on the findings they apply to, and ? documents every key.
     BINDINGS = [
         Binding("f", "fix", "Fix"),
-        Binding("d", "diff", "Diff"),
+        Binding("d", "diff", "Diff", show=False),
         Binding("s", "skip", "Skip"),
-        Binding("a", "annotate", "Annotate"),
-        Binding("i", "ignore", "Not slop"),
+        Binding("a", "annotate", "Annotate", show=False),
+        Binding("i", "ignore", "Not slop", show=False),
         Binding("u", "undo", "Undo", show=False),
-        Binding("p", "fix_auto", "Fix all auto"),
-        Binding("x", "export", "AI fix brief"),
+        Binding("p", "fix_auto", "Fix all"),
+        Binding("x", "export", "Fix brief"),
         Binding("c", "conf_filter", "Confidence floor", show=False),
         Binding("e", "toggle", "Expand/Collapse", show=False),
         Binding("h", "hide_handled", "Hide handled", show=False),
@@ -145,26 +158,38 @@ class ResultsScreen(AdaptiveScreen):
         return t
 
     def _brief_hint(self) -> Text:
-        """One always-visible line teaching the AI-fix-brief workflow.
+        """One always-visible line: the impact split.
 
-        The tool's biggest hidden feature: findings it can't fix itself can be
-        exported as a ready-made prompt for a coding agent. Say so on screen.
+        The headline number is *application problems*, not the total. "41
+        findings need judgement" was true and useless — 31 of those 41 were
+        single-word buzzwords. Naming the two classes separately is what makes
+        the screen readable, and the fix brief leads on the same split.
+
+        Nothing else rides on this line. It is ``no_wrap``, so the "press x for
+        an AI fix brief (a ready prompt for Claude Code / Cursor / Copilot)"
+        tail it used to carry was simply cut off at 80 columns, leaving the line
+        ending on a dangling "—". The footer teaches ``x``; this says what the
+        number is.
         """
-        n = sum(
-            1 for f in self._findings
-            if f.status is Status.OPEN and f.fixability is not Fixability.AUTO
-        )
+        open_ = [f for f in self._findings if f.status is Status.OPEN]
+        problems = sum(1 for f in open_ if f.impact.is_application)
+        warnings = len(open_) - problems
         t = Text(no_wrap=True, overflow="ellipsis")
-        if not n:
+        if not open_:
             t.append("✨ press ", style=FAINT)
             t.append("x", style=f"bold {ACCENT}")
             t.append(" to export the findings — AI fix brief, JSON or SARIF", style=FAINT)
             return t
-        t.append("✨ ", style=ACCENT)
-        t.append(f"{n} finding(s) need judgement — press ", style=DIM)
-        t.append("x", style=f"bold {BG} on {ACCENT}")
-        t.append(" for an AI fix brief ", style=DIM)
-        t.append("(a ready prompt for Claude Code / Cursor / Copilot)", style=FAINT)
+        if problems:
+            t.append("▲ ", style=WARN)
+            t.append(f"{problems} application problem(s)", style=f"bold {WARN}")
+            t.append(" (broken or risky)", style=FAINT)
+        else:
+            t.append("✓ ", style=OK)
+            t.append("no application problems", style=f"bold {OK}")
+        if warnings:
+            t.append("  ·  ", style=FAINT)
+            t.append(f"{warnings} simple warning(s)", style=DIM)
         return t
 
     def _slop_score(self) -> int:
@@ -263,7 +288,10 @@ class ResultsScreen(AdaptiveScreen):
             cat_label.append(f"{count}", style=DIM)
             cat_node = tree.root.add(cat_label, expand=True)
             for path, items in files.items():
-                items.sort(key=lambda f: (-f.confidence, f.line))
+                # Impact first: a BROKEN import outranks a 97%-confidence
+                # buzzword, because confidence answers "is this really slop?"
+                # and impact answers "does this break my application?".
+                items.sort(key=lambda f: (-f.impact.rank, -f.confidence, f.line))
                 score = file_score(items)
                 file_label = Text(no_wrap=True, overflow="ellipsis")
                 file_label.append(f"{self._basename(path)} ", style=TEXT)
@@ -343,6 +371,12 @@ class ResultsScreen(AdaptiveScreen):
             t.append("→ ", style=DIM)
         elif f.status is Status.IGNORED:
             t.append("⊘ ", style=DIM)
+        # Only application problems are tagged — POLISH is the bulk of any tree
+        # and a tag on every row would mark nothing. An unlabelled row *is* the
+        # signal that this one is just taste.
+        label = IMPACT_LABEL[f.impact]
+        if label:
+            t.append(f"{label} ", style=f"bold {IMPACT_COLORS[f.impact]}")
         body_style = DIM if f.status is not Status.OPEN else TEXT
         t.append(f"{self._trunc(f.message, 40)} ", style=body_style)
         t.append(f"L{f.line} ", style=FAINT)
@@ -366,6 +400,21 @@ class ResultsScreen(AdaptiveScreen):
             Fixability.PROMPT: "needs a value",
             Fixability.MANUAL: "manual review",
         }[fix]
+
+    @staticmethod
+    def _impact_line(f: Finding) -> Text:
+        """The impact tag plus the sentence that says what it means.
+
+        Fixability says *how* to fix; this says *what is at stake*. Without it
+        an SQLi sink and the word "seamless" both read "⚑ manual review".
+        """
+        color = IMPACT_COLORS[f.impact]
+        t = Text()
+        t.append("impact      ", style=DIM)
+        t.append(f" {f.impact.value.upper()} ", style=f"bold {BG} on {color}")
+        t.append("  ", style=DIM)
+        t.append(IMPACT_BLURB[f.impact], style=color if f.impact.is_application else FAINT)
+        return t
 
     @staticmethod
     def _status_text(status: Status) -> Text:
@@ -448,7 +497,14 @@ class ResultsScreen(AdaptiveScreen):
         body.append(f.suggested_fix or "Review and edit by hand.", style=MUTED)
         body.append("\n  or let your AI assistant do it: ", style=FAINT)
         body.append("x", style=f"bold {BG} on {ACCENT}")
-        body.append(" exports a ready fix prompt", style=FAINT)
+        # Say which half of the brief this finding lands in, so the offer is
+        # never oversold: POLISH is rolled up there, not written out.
+        body.append(
+            " exports a fix brief — this one is written out in full"
+            if f.impact.is_application
+            else " exports a fix brief — this one is summarized there, not detailed",
+            style=FAINT,
+        )
         return "SUGGESTED FIX", body
 
     @staticmethod
@@ -502,6 +558,10 @@ class ResultsScreen(AdaptiveScreen):
         t.append(f"{f.file}:{f.line}:{f.col}\n", style=DIM)
         t.append("confidence  ", style=DIM)
         t.append_text(self._conf_meter(f.confidence))
+        t.append("  ", style=DIM)
+        t.append("is this really slop?", style=FAINT)
+        t.append("\n")
+        t.append_text(self._impact_line(f))
         t.append("\n")
         t.append(FIX_ICON[f.fixability.value] + " ", style=FIX_COLOR[f.fixability.value])
         t.append(self._fix_phrase(f.fixability), style=FIX_COLOR[f.fixability.value])
@@ -1008,7 +1068,8 @@ class ResultsScreen(AdaptiveScreen):
             if fmt is not None:
                 self._export(fmt, open_)
 
-        self.app.push_screen(ExportModal(len(open_)), callback)
+        problems = sum(1 for f in open_ if f.impact.is_application)
+        self.app.push_screen(ExportModal(len(open_), problems), callback)
 
     def _export(self, fmt: str, open_: list[Finding]) -> None:
         from pathlib import Path

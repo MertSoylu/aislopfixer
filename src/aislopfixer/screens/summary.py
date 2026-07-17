@@ -11,7 +11,7 @@ from textual.reactive import reactive
 from textual.widgets import Static
 
 from .base import AdaptiveScreen
-from ..engine.models import Category, Finding, Severity, Status
+from ..engine.models import Category, Finding, Status
 from ..engine.scoring import project_score_from_findings
 from ..theme import (
     ACCENT,
@@ -23,8 +23,6 @@ from ..theme import (
     DIM,
     FAINT,
     OK,
-    SEVERITY_COLORS,
-    SEVERITY_ICON,
     TEXT,
     WARN,
 )
@@ -102,7 +100,7 @@ class SummaryScreen(AdaptiveScreen):
             yield Static("✦  SCAN SUMMARY", id="summary-title")
             yield Static(self._target_line(), id="summary-target")
             yield Static(self._slop_line(self._slop), id="summary-slop")
-            yield Static(self._sev_line(), id="summary-sev")
+            yield Static(self._impact_line(), id="summary-sev")
             with Horizontal(id="summary-counters"):
                 yield CountUp("Found", ACCENT, id="s-found", classes="rc")
                 yield CountUp("Fixed", OK, id="s-fixed", classes="rc")
@@ -126,25 +124,30 @@ class SummaryScreen(AdaptiveScreen):
             t.append(str(target), style=FAINT)
         return t
 
-    def _sev_line(self) -> Text:
-        """A compact ``● n errors ▲ n warnings ■ n info`` breakdown row."""
-        per_sev = Counter(f.severity for f in self._findings)
+    def _impact_line(self) -> Text:
+        """The same split the results screen and the fix brief lead on.
+
+        This used to be a severity breakdown ("▲ 13 warnings  ■ 28 infos").
+        Over the same findings the results header said "10 application
+        problem(s) · 31 simple warning(s)", so the last screen of the flow —
+        the one worth screenshotting — quietly changed axis and disagreed with
+        the screen before it: 10 ≠ 13, 31 ≠ 28, with nothing to explain why.
+        """
         t = Text(justify="center")
-        shown = False
-        for sev, label in (
-            (Severity.ERROR, "error"),
-            (Severity.WARNING, "warning"),
-            (Severity.INFO, "info"),
-        ):
-            n = per_sev.get(sev, 0)
-            if not n:
-                continue
-            if shown:
-                t.append("    ", style=DIM)
-            t.append(f"{SEVERITY_ICON[sev]} ", style=SEVERITY_COLORS[sev])
-            t.append(f"{n} ", style=f"bold {SEVERITY_COLORS[sev]}")
-            t.append(label + ("s" if n != 1 else ""), style=DIM)
-            shown = True
+        if not self._findings:
+            return t
+        problems = sum(1 for f in self._findings if f.impact.is_application)
+        warnings = len(self._findings) - problems
+        if problems:
+            t.append("▲ ", style=_WARN)
+            t.append(f"{problems} application problem(s)", style=f"bold {_WARN}")
+            t.append(" (broken or risky)", style=FAINT)
+        else:
+            t.append("✓ ", style=OK)
+            t.append("no application problems", style=f"bold {OK}")
+        if warnings:
+            t.append("    ·    ", style=FAINT)
+            t.append(f"{warnings} simple warning(s)", style=DIM)
         return t
 
     def _slop_line(self, slop: int) -> Text:
@@ -167,15 +170,21 @@ class SummaryScreen(AdaptiveScreen):
         return t
 
     def _tip_line(self, remaining: int) -> Text:
-        """Where the report went; how to hand the leftovers to an AI assistant."""
+        """Where the report went; how to hand the leftovers to an AI assistant.
+
+        Kept under ~66 columns — the box's inner width at the size the README
+        screenshots use. The line is ``no_wrap``, so the old wording (101 chars)
+        was chopped to "…b back, then x" and ended on a bare key nobody could
+        act on.
+        """
         t = Text(justify="center", no_wrap=True, overflow="ellipsis")
-        t.append("report saved to .aislopfixer/report.md", style=FAINT)
+        t.append("report: .aislopfixer/report.md", style=FAINT)
         if remaining:
-            t.append("   ·   ", style=FAINT)
+            t.append("  ·  ", style=FAINT)
             t.append("b", style=f"bold {ACCENT}")
             t.append(" back, then ", style=DIM)
             t.append("x", style=f"bold {ACCENT}")
-            t.append(" exports a fix brief for your AI assistant", style=DIM)
+            t.append(" for a fix brief", style=DIM)
         return t
 
     def _menu_line(self) -> Text:

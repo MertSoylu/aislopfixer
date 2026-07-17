@@ -3,6 +3,7 @@
 import json
 
 from aislopfixer.engine.models import Category, Finding, Severity, Status
+from aislopfixer.engine.scoring import project_score_from_findings
 from aislopfixer.store import DIRNAME, LEDGER, REPORT, Store
 
 
@@ -119,8 +120,13 @@ def test_report_scores_live_findings_not_scan_time(tmp_path):
     b.confidence = 0.44
     store.write_report([a, b], str(tmp_path))
     text = (tmp_path / ".aislopfixer" / "report.md").read_text(encoding="utf-8")
-    assert "- **Slop score:** 44/100" in text
-    assert "_(was" in text
+    # Derived, not a constant: the point is *which findings are scored*, and
+    # pinning a literal made this test fail whenever scoring was retuned.
+    live = round(project_score_from_findings([b]) * 100)
+    was = round(project_score_from_findings([a, b]) * 100)
+    assert live < was, "fixing the leak must move the number"
+    assert f"- **Slop score:** {live}/100" in text
+    assert f"_(was {was}/100 at scan time)_" in text
 
     # An untouched scan shows a single number — no misleading "was".
     a.status = Status.OPEN

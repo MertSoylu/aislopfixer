@@ -321,6 +321,31 @@ CASES: list[dict] = [
                 "<p>Hello</p>\n",
         "clean": True,
     },
+    {
+        # A hand-written pricing section: soft radii, shadows, a 3-col grid, two
+        # CTAs, an indigo hairline on the highlighted card and the universal
+        # Starter/Team/Enterprise trio. Every one of those is how pricing pages
+        # have always been built — none is an authorship tell, and the kit used
+        # to score this page 82%.
+        "name": "clean_human_pricing_page",
+        "filename": "Pricing.jsx",
+        "text": '<section className="grid grid-cols-3 gap-6">\n'
+                '  <div className="rounded-2xl shadow-xl p-6">\n'
+                "    <h3>Starter</h3><p>$9 / month</p>\n"
+                '    <a href="/signup">Get started free</a>\n'
+                "  </div>\n"
+                '  <div className="rounded-2xl shadow-xl p-6 border-indigo-500">\n'
+                "    <span>Most popular</span>\n"
+                "    <h3>Team</h3><p>$29 / month</p>\n"
+                '    <a href="/signup">Get started free</a>\n'
+                "  </div>\n"
+                '  <div className="rounded-2xl shadow-xl p-6">\n'
+                "    <h3>Enterprise</h3>\n"
+                '    <a href="/contact">Contact sales</a>\n'
+                "  </div>\n"
+                "</section>\n",
+        "clean": True,
+    },
     # ------------------------------------------- modern landing/copy slop cases
     {
         "name": "fake_metric_strip",
@@ -330,12 +355,28 @@ CASES: list[dict] = [
         "expect": {"design.fake_metrics"},
     },
     {
+        # The triad only means something next to another tell — here a strip of
+        # invented stats. Its clean twin is `clean_bare_pricing_triad` below:
+        # the two differ by exactly the corroborating signal.
         "name": "pricing_triad",
+        "filename": "pricing.html",
+        "text": "<section><p>99.9% uptime and 10k+ users</p>"
+                "<h3>Pro</h3><p>$29/month</p>"
+                '<span class="badge">Most Popular</span>'
+                "<h3>Enterprise</h3><p>Contact sales</p></section>\n",
+        "expect": {"design.pricing_triad"},
+    },
+    {
+        # Ground truth, corrected: a bare Starter/Pro/Enterprise card with a
+        # "Most Popular" badge and per-month pricing is how Stripe, Linear and
+        # every other real pricing page is built. Labelling it slop made the
+        # rule fire on ~every genuine pricing page.
+        "name": "clean_bare_pricing_triad",
         "filename": "pricing.html",
         "text": "<section><h3>Pro</h3><p>$29/month</p>"
                 '<span class="badge">Most Popular</span>'
                 "<h3>Enterprise</h3><p>Contact sales</p></section>\n",
-        "expect": {"design.pricing_triad"},
+        "clean": True,
     },
     {
         "name": "section_recipe",
@@ -435,6 +476,80 @@ CASES: list[dict] = [
                 '<a href="/signup">Get started free</a>\n'
                 '<a href="/features">Learn more</a>\n'
                 '<h2>How it works</h2>\n',
+        "clean": True,
+    },
+    {
+        # Hand-written shop page: a sticky blurred header and two rounded cards
+        # with hairline borders. No purple, no CTA, no hero, no metrics. The
+        # glass family had no proximity gate and counted `border-white/10` as a
+        # translucent surface, so the blur + a hairline unlocked a _KIT_STRONG
+        # family and this scored 82% design.landing_kit / 89 slop.
+        "name": "clean_human_blurred_header_shop",
+        "filename": "shop.html",
+        "text": '<header class="sticky top-0 z-40 border-b border-white/10 '
+                'backdrop-blur">\n'
+                '  <nav class="flex gap-6 px-6 py-4"><a href="/beans">Beans</a>'
+                '<a href="/visit">Visit</a></nav>\n'
+                '</header>\n'
+                '<main class="px-6 py-10">\n'
+                '  <h1 class="text-3xl font-semibold">Bristol-roasted coffee '
+                'since 1998</h1>\n'
+                '  <div class="rounded-2xl border border-white/10 p-6 shadow-xl">\n'
+                '    <h2>Ethiopia Guji</h2><p>Washed, roasted for filter. 250g.</p>\n'
+                '  </div>\n'
+                '  <div class="rounded-2xl border border-white/10 p-6 shadow-xl">\n'
+                '    <h2>Brazil Cerrado</h2><p>Natural, for espresso. 250g.</p>\n'
+                '  </div>\n'
+                '</main>\n',
+        "clean": True,
+    },
+    {
+        # The two _CSS_GRADIENT lookaheads scan from the same offset, so while
+        # `violet` sat in both colour lists a single stop satisfied both halves
+        # and a rainbow was reported as a two-stop "purple→pink" gradient.
+        "name": "clean_rainbow_gradient",
+        "filename": "brand.css",
+        "text": ".sunset { background: linear-gradient(to right, violet, orange); }\n"
+                ".rainbow { background: linear-gradient(to right, violet, indigo, "
+                "blue, green, yellow, orange, red); }\n"
+                ".fade { background: linear-gradient(90deg, #8b5cf6, #0f172a); }\n",
+        "clean": True,
+    },
+    {
+        # `<token>` is how every CLI documents a required argument, not a leaked
+        # credential — this drew three 85%-confidence RISKY "rotate this
+        # credential" findings over a usage string.
+        "name": "clean_cli_usage_docs",
+        "filename": "cli.md",
+        "text": "# mycli reference\n\n## Authentication\n\n"
+                "    mycli auth login <token>\n\n"
+                "Pass it as `<token>`; the client stores it in the OS keychain.\n\n"
+                "    mycli deploy <key> --region eu-west-2\n",
+        "clean": True,
+    },
+    {
+        # `catch { return false; }` with no error binding is a capability probe
+        # — the correct implementation of feature detection, and the shape
+        # _EMPTY_CATCH already exempts when a comment documents it.
+        "name": "clean_feature_detection_probe",
+        "filename": "storage.ts",
+        "text": "// Safari in private mode throws on any write.\n"
+                "export function hasLocalStorage(): boolean {\n"
+                '  try {\n    window.localStorage.setItem("__probe__", "1");\n'
+                '    window.localStorage.removeItem("__probe__");\n'
+                "    return true;\n  }\n"
+                "  catch { return false; }\n}\n",
+        "clean": True,
+    },
+    {
+        # Prose *about* lorem ipsum is not lorem ipsum. The `[^<>\n]*` tail only
+        # stops at a tag, so in Markdown the AUTO fix ate the rest of the line.
+        "name": "clean_prose_about_lorem",
+        "filename": "design-notes.md",
+        "text": "Our designers keep shipping comps with lorem ipsum in the body "
+                "slots, and stakeholders read it as final copy.\n\n"
+                "Decision: lorem ipsum is banned in any comp that goes to a "
+                "client. Use real copy from the CMS export instead.\n",
         "clean": True,
     },
 ]

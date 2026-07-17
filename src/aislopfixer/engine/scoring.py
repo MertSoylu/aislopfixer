@@ -13,15 +13,19 @@ Confidence is derived from three layers, most specific first:
 
 File and project scores aggregate those confidences:
 
-* :func:`file_score` — noisy-OR, so one strong finding dominates and many weak
-  ones still accumulate without ever exceeding 1.0;
+* :func:`file_score` — an *impact-weighted* noisy-OR: findings accumulate within
+  their impact class, each class is capped at its ceiling
+  (:data:`_IMPACT_CEILING`), and the classes combine. One strong finding
+  dominates; a POLISH tail alone can never max out the gauge;
 * :func:`project_score` — a self-weighted mean of file scores, so a single very
   sloppy file is not diluted by a sea of clean ones.
 """
 
 from __future__ import annotations
 
-from .models import Category, Finding, Severity
+from functools import lru_cache
+
+from .models import Category, Finding, Impact, Severity
 
 SEV_W: dict[Severity, float] = {
     Severity.INFO: 0.55,
@@ -55,8 +59,10 @@ RULE_OVERRIDE: dict[str, float] = {
     # too (feature detection, fire-and-forget) — quiet alone, corroboration
     # lifts it in files carrying other authorship tells.
     "codegen.empty_catch": 0.50,
-    # Weaker catch shapes: masked failures, but common in human code too.
-    "codegen.catch_return_default": 0.62,
+    # Weaker catch shapes: masked failures, but common in human code too. Held
+    # at empty_catch's level, never above it — an empty catch is the stronger
+    # tell, so a *thinner* disguise outranking it (0.62 vs 0.50) was backwards.
+    "codegen.catch_return_default": 0.50,
     "codegen.log_only_catch": 0.45,
     # Aggregate over-commenting signal — meaningful only in bulk.
     "codegen.comment_density": 0.50,
@@ -125,17 +131,82 @@ RULE_OVERRIDE: dict[str, float] = {
 }
 
 
+# rule_id prefix -> Impact. Longest matching prefix wins; anything unlisted is
+# POLISH. Confidence answers "is this really slop?"; Impact answers the question
+# the user actually acts on: "is this a problem with my application, or a note
+# about its taste?" Both an SQLi sink and the word "seamless" are MANUAL —
+# without this axis the fix brief lists them as peers and an agent spends its
+# effort on the wrong one.
+#
+# BROKEN — the file does not work as written: unresolved code, phantom modules.
+# RISKY  — it runs, but ships a hazard: a sink, a secret, fake data, a dead link.
+# POLISH — voice and aesthetics. Real slop, but nobody's product is broken by it.
+IMPACT_OVERRIDE: dict[str, Impact] = {
+    # ---------------------------------------------------------------- BROKEN
+    "merge.conflict": Impact.BROKEN,      # markers left in source
+    "codegen.markdown_fence": Impact.BROKEN,  # chat fence pasted into code
+    "codegen.elision": Impact.BROKEN,     # "... rest of the code ..." — code is gone
+    "codegen.stub_body": Impact.BROKEN,   # throw new Error('Not implemented')
+    "codegen.stub_comment": Impact.BROKEN,  # "// your code here"
+    "import.undeclared": Impact.BROKEN,   # hallucinated package — build fails
+    "import.missing_export": Impact.BROKEN,  # phantom symbol — build fails
+    # ----------------------------------------------------------------- RISKY
+    "security": Impact.RISKY,             # every sink, weak crypto, disabled TLS
+    "secret": Impact.RISKY,               # placeholder + hardcoded credentials
+    "ai_leak.strong": Impact.RISKY,       # "As an AI language model" in shipped copy
+    "codegen.debugger": Impact.RISKY,     # ships a breakpoint to every visitor
+    "codegen.empty_catch": Impact.RISKY,  # failures vanish silently
+    "codegen.catch_return_default": Impact.RISKY,
+    "codegen.log_only_catch": Impact.RISKY,
+    "placeholder.dead_href": Impact.RISKY,      # navigation goes nowhere
+    "placeholder.void_href": Impact.RISKY,
+    "placeholder.fake_api": Impact.RISKY,       # requests hit a domain you don't own
+    "placeholder.example_domain": Impact.RISKY,
+    "placeholder.email": Impact.RISKY,          # contact mail is delivered nowhere
+    "placeholder.phone": Impact.RISKY,
+    "placeholder.image": Impact.RISKY,          # third-party host serves your art
+    "placeholder.lorem": Impact.RISKY,          # filler text shipped to users
+    "placeholder.bracket": Impact.RISKY,        # literal "[Your Company Name]" on a page
+    "a11y.img_no_alt": Impact.RISKY,            # unusable with a screen reader
+    "design.fake_social_proof": Impact.RISKY,   # invented claims — a legal exposure,
+    "design.fake_metrics": Impact.RISKY,        #   not a matter of taste
+    "design.fake_logo_cloud": Impact.RISKY,
+    "design.fake_avatar": Impact.RISKY,
+    # POLISH is the default: buzzword.*, copy.*, prose.*, md.*, duplicate.*,
+    # import.unused, the aesthetic design.* tells, placeholder.todo/name/company/
+    # address, a11y.img_generic_alt, ai_leak.soft, codegen.restate_comment,
+    # codegen.comment_density, codegen.debug_log.
+}
+
+
 def _clamp01(x: float) -> float:
     return 0.0 if x < 0.0 else 1.0 if x > 1.0 else x
 
 
-def score_finding(f: Finding) -> float:
-    """Confidence for one finding from the override table or category×severity."""
+def _longest_prefix(rule_id: str, table: dict):
+    """Value whose key is the longest prefix of ``rule_id``, or None."""
     best_len = -1
     best_val = None
-    for prefix, val in RULE_OVERRIDE.items():
-        if f.rule_id.startswith(prefix) and len(prefix) > best_len:
+    for prefix, val in table.items():
+        if rule_id.startswith(prefix) and len(prefix) > best_len:
             best_len, best_val = len(prefix), val
+    return best_val
+
+
+@lru_cache(maxsize=None)
+def impact_of(rule_id: str) -> Impact:
+    """What kind of work a rule's findings are. Unlisted rules are POLISH.
+
+    Cached: ``Finding.impact`` reads through here on every tree repaint, and
+    the rule-id vocabulary is small and fixed.
+    """
+    found = _longest_prefix(rule_id, IMPACT_OVERRIDE)
+    return found if found is not None else Impact.POLISH
+
+
+def score_finding(f: Finding) -> float:
+    """Confidence for one finding from the override table or category×severity."""
+    best_val = _longest_prefix(f.rule_id, RULE_OVERRIDE)
     if best_val is not None:
         return best_val
     prior = CAT_PRIOR.get(f.category, 0.5)
@@ -202,11 +273,40 @@ def reset_and_corroborate(findings: list[Finding]) -> list[Finding]:
     return findings
 
 
+# How much of the gauge each impact class may claim on its own. A plain
+# noisy-OR over every confidence made the headline number a *volume* meter: the
+# weak 0.30 buzzwords stacked up until they maxed it out, so a prose-only
+# marketing page with zero defects (13 adjectives → 100/100) and a file shipping
+# SQL injection + XSS + command injection (3 vulns → 100/100) scored *identically*.
+# A score that cannot separate those cannot help anyone decide whether to care.
+#
+# Impact is the axis that separates them, so the gauge rides on it: each class
+# noisy-ORs within itself, is capped at its ceiling, and the classes then
+# noisy-OR together — so POLISH alone can never pass 40, findings still
+# accumulate inside a class, and a real hazard still dominates the number.
+_IMPACT_CEILING: dict[Impact, float] = {
+    Impact.POLISH: 0.40,
+    Impact.RISKY: 0.85,
+    Impact.BROKEN: 1.0,
+}
+
+
 def file_score(findings: list[Finding]) -> float:
-    """Noisy-OR of a file's finding confidences: ``1 - Π(1 - c)``."""
+    """Impact-weighted noisy-OR of a file's finding confidences.
+
+    Within one impact class: ``1 - Π(1 - c)``, capped at that class's ceiling.
+    Across classes: noisy-OR of the capped class scores, so a file carrying both
+    a hazard and a pile of buzzwords still outranks either alone.
+    """
     prod = 1.0
-    for f in findings:
-        prod *= 1.0 - _clamp01(f.confidence)
+    for impact, ceiling in _IMPACT_CEILING.items():
+        group = [f for f in findings if f.impact is impact]
+        if not group:
+            continue
+        inner = 1.0
+        for f in group:
+            inner *= 1.0 - _clamp01(f.confidence)
+        prod *= 1.0 - _clamp01(1.0 - inner) * ceiling
     return _clamp01(1.0 - prod)
 
 

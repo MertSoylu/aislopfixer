@@ -269,3 +269,60 @@ def test_landing_kit_weak_plus_one_strong_fires():
     )
     f = run_file_rules(sf(text))
     assert "design.landing_kit" in ids(f)
+
+
+def test_landing_kit_quiet_on_ordinary_human_pricing_page():
+    """A hand-written pricing section must not read as the AI kit.
+
+    Regression: `border-indigo-500` marking the highlighted card counted as the
+    purple-accent family, and 'Most popular' + '/month' counted as the pricing
+    family — both were STRONG, so this page scored 82% and 92/100 slop. Neither
+    is an authorship tell: a hairline accent and the Starter/Team/Enterprise
+    trio are how pricing pages have always been built.
+    """
+    text = """
+<section class="grid grid-cols-3 gap-6">
+  <div class="rounded-2xl shadow-xl p-6">
+    <h3>Starter</h3><p>$9 / month</p>
+    <a href="/signup">Get started free</a>
+  </div>
+  <div class="rounded-2xl shadow-xl p-6 border-indigo-500">
+    <span>Most popular</span>
+    <h3>Team</h3><p>$29 / month</p>
+    <a href="/signup">Get started free</a>
+  </div>
+  <div class="rounded-2xl shadow-xl p-6">
+    <h3>Enterprise</h3>
+    <a href="/contact">Contact sales</a>
+  </div>
+</section>
+"""
+    f = run_file_rules(sf(text, "Pricing.jsx"))
+    assert "design.landing_kit" not in ids(f)
+
+
+def test_landing_kit_purple_paint_still_counts_over_a_bare_accent_border():
+    """Purple as the paint is the tell; purple as one hairline is not."""
+    weak = (
+        '<a href="/go">Get started free</a> <a href="/docs">Learn more</a>\n'
+        '<div class="rounded-2xl shadow-xl border-indigo-500"></div>\n'
+        '<div class="rounded-2xl shadow-xl"></div>\n'
+    )
+    assert "design.landing_kit" not in ids(run_file_rules(sf(weak)))
+    # Same page, purple moved from the border onto the headline.
+    paint = weak + '<h1 class="text-purple-600">Ship</h1>\n'
+    assert "design.landing_kit" in ids(run_file_rules(sf(paint)))
+
+
+def test_landing_kit_pricing_alone_does_not_unlock():
+    """Pricing is a convention, not a strong family — it can't carry the kit."""
+    text = (
+        '<div class="rounded-2xl shadow-xl"></div>\n'
+        '<div class="rounded-2xl shadow-xl"></div>\n'
+        '<section class="grid grid-cols-3">\n'
+        "  <span>Most popular</span><p>$29 / month</p>\n"
+        "  <h3>Enterprise</h3>\n"
+        "</section>\n"
+    )
+    f = run_file_rules(sf(text))
+    assert "design.landing_kit" not in ids(f)

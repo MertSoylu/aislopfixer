@@ -57,6 +57,21 @@ def test_trusted_by_count_not_double_flagged_as_metric():
 
 # ------------------------------------------------------------ pricing triad
 def test_pricing_triad_flagged():
+    """The triad reports once the file tells on itself some other way."""
+    f = run_file_rules(
+        sf(
+            "<section><p>99.9% uptime and 10k+ users</p>"
+            "<h3>Pro</h3><p>$29/month</p>"
+            '<span class="badge">Most Popular</span>'
+            "<h3>Enterprise</h3><p>Contact sales</p></section>\n"
+        )
+    )
+    assert "design.pricing_triad" in ids(f)
+
+
+def test_bare_pricing_triad_not_flagged():
+    """Uncorroborated, the triad describes every real pricing page — so it is
+    evidence of nothing. Stripe, Linear and Vercel all ship exactly this."""
     f = run_file_rules(
         sf(
             "<section><h3>Pro</h3><p>$29/month</p>"
@@ -64,7 +79,7 @@ def test_pricing_triad_flagged():
             "<h3>Enterprise</h3><p>Contact sales</p></section>\n"
         )
     )
-    assert "design.pricing_triad" in ids(f)
+    assert "design.pricing_triad" not in ids(f)
 
 
 def test_pricing_without_badge_not_flagged():

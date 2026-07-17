@@ -6,9 +6,15 @@ fixed or marked not-slop stays suppressed — and prints the remaining findings
 as plain text, JSON or SARIF 2.1.0 (``--sarif``, for GitHub code scanning).
 The exit code makes it a gate:
 
-* ``0`` — nothing at or above the ``--fail-on`` severity;
-* ``1`` — at least one finding at/above the threshold;
+* ``0`` — nothing trips ``--fail-on``;
+* ``1`` — at least one finding does;
 * ``2`` — bad invocation (path missing / not a directory).
+
+``--fail-on`` accepts either axis: ``broken``/``risky`` gate on
+:class:`~aislopfixer.engine.models.Impact` (``risky`` = any application
+problem — the sensible CI gate, and the same split the TUI and the fix brief
+lead on), while ``info``/``warning``/``error`` gate on severity and ``never``
+always exits 0.
 
 ``--fix`` additionally applies the safe automatic fixes (the same
 confidence-gated set as the TUI's "fix all auto") before reporting, and
@@ -32,7 +38,7 @@ from typing import TextIO
 
 from . import __version__, fixer
 from .config import Config
-from .engine.models import Finding, Severity, Status
+from .engine.models import Finding, Impact, Severity, Status
 from .engine.scoring import project_score_from_findings
 from .pipeline import scan_project
 from .store import Store
@@ -46,6 +52,26 @@ MAX_FIX_PASSES = 3
 
 _SEV_ORDER = {"info": 0, "warning": 1, "error": 2}
 
+# ``--fail-on`` gates on the Impact axis. Severity says how loud a finding is;
+# impact says what is at stake, and it is what CI should actually gate on: 19
+# POLISH rules carry severity=warning (buzzword.density, design.landing_kit,
+# ai_leak.soft…), so under the severity gate a page whose only sin was adjectives
+# exited 1 and turned the build red — while the tool's own fix brief told the
+# agent those were "simple warnings… do not spend this pass on them". Failing a
+# build over findings you have just labelled not-worth-fixing is a contradiction.
+_IMPACT_GATE = {"risky": Impact.RISKY, "broken": Impact.BROKEN}
+
+
+def _fails(reported: list[Finding], fail_on: str) -> bool:
+    """Does anything in ``reported`` trip the ``fail_on`` gate?"""
+    if fail_on == "never":
+        return False
+    gate = _IMPACT_GATE.get(fail_on)
+    if gate is not None:
+        return any(f.impact.rank >= gate.rank for f in reported)
+    threshold = _SEV_ORDER[fail_on]
+    return any(_SEV_ORDER[f.severity.value] >= threshold for f in reported)
+
 # When the output stream cannot encode our punctuation (legacy Windows
 # consoles: cp1252 and narrower), degrade to ASCII lookalikes instead of
 # letting `errors="replace"` pepper the report with question marks.
@@ -56,15 +82,43 @@ _ASCII_FALLBACK = str.maketrans({
 })
 
 
+def _is_tty(stream: TextIO) -> bool:
+    try:
+        return bool(stream.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
+def _fit_char(ch: str, enc: str) -> str:
+    try:
+        ch.encode(enc)
+    except UnicodeEncodeError:
+        return ch.translate(_ASCII_FALLBACK)
+    return ch
+
+
 def _fit_encoding(text: str, stream: TextIO) -> str:
-    """Return ``text`` as-is when the stream can encode it, else ASCII-degraded."""
+    """ASCII-degrade only the characters ``stream`` cannot encode.
+
+    This used to be all-or-nothing: a single unencodable character anywhere in
+    the report degraded the *whole* document, so the same message printed
+    "Elision marker — real code was dropped" under ``--check`` and "Elision
+    marker - real code was dropped" under ``--fix``, purely because an unrelated
+    emoji elsewhere in the second report tripped the fallback.
+
+    Human-readable output only. ``--json``/``--sarif`` never come through here:
+    they are UTF-8 by spec, and mangling their punctuation to fit a console
+    codepage would be a bug, not a courtesy.
+    """
     enc = getattr(stream, "encoding", None)
     if not enc:
         return text
     try:
         text.encode(enc)
-    except (UnicodeEncodeError, LookupError):
+    except LookupError:
         return text.translate(_ASCII_FALLBACK)
+    except UnicodeEncodeError:
+        return "".join(_fit_char(ch, enc) for ch in text)
     return text
 
 
@@ -86,10 +140,22 @@ def run_check(
     project's ``.aislopfixer.toml``, then to ``"warning"`` / ``0.0``.
     """
     out = stream if stream is not None else sys.stdout
-    # Rule messages carry non-ASCII (em-dashes, quotes); on legacy Windows
-    # consoles (cp1252 & narrower) print must degrade, never crash.
+    # Write UTF-8 for everything that is not going to a console.
+    #
+    # JSON and SARIF are UTF-8 *by spec*, never the console codepage: on a
+    # legacy Windows console the stream encoded an em-dash to cp1252's 0x97, so
+    # the artifact was not valid UTF-8 and `json.load(..., encoding="utf-8")` —
+    # and `upload-sarif`, which action.yml pipes straight into — choked on the
+    # output this tool advertises as the CI path.
+    #
+    # Human text is the same story once it stops being human-facing:
+    # `--prompt > fix-brief.md` is a file, and a Markdown file in cp1254 is
+    # wrong for the same reason. So the codepage only wins on a real terminal,
+    # which is the one place it is right — there the text degrades per
+    # character instead (see _fit_encoding).
+    utf8 = as_json or as_sarif or not _is_tty(out)
     try:
-        out.reconfigure(errors="replace")
+        out.reconfigure(encoding="utf-8" if utf8 else None, errors="replace")
     except (AttributeError, OSError, ValueError):
         pass
     target = Path(path).expanduser()
@@ -137,13 +203,9 @@ def run_check(
         rendered = _render_json(str(target), reported, fixed)
     else:
         rendered = _render_text(str(target), reported, fixed)
-    out.write(_fit_encoding(rendered, out))
+    out.write(rendered if utf8 else _fit_encoding(rendered, out))
 
-    threshold = _SEV_ORDER.get(fail_on)
-    if threshold is None:  # "never"
-        return 0
-    failing = any(_SEV_ORDER[f.severity.value] >= threshold for f in reported)
-    return 1 if failing else 0
+    return 1 if _fails(reported, fail_on) else 0
 
 
 def _apply_auto_fixes(findings: list[Finding], store: Store | None) -> list[Finding]:
