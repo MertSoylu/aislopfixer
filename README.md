@@ -3,11 +3,10 @@
 > Find and fix **AI-generated slop** in web projects — hallucinated dependencies, security holes, swallowed errors, leftover chat residue and LLM marketing prose. Terminal UI + CI mode. Fully offline, rule-based, no API keys.
 
 [![npm](https://img.shields.io/npm/v/@mertsoylu/aislopfixer.svg)](https://www.npmjs.com/package/@mertsoylu/aislopfixer)
-[![PyPI](https://img.shields.io/pypi/v/aislopfixer.svg)](https://pypi.org/project/aislopfixer/)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Current version: 0.5.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer) / [PyPI](https://pypi.org/project/aislopfixer/)
+**Current version: 0.5.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer)
 
 AI-generated code ships with a recognizable class of defects — and they are not the old "As an AI language model…" giveaways. Today's models hallucinate package imports that break your build (and invite [slopsquatting](https://en.wikipedia.org/wiki/Slopsquatting) attacks), wrap everything in `try/catch` and silently swallow the error, store JWTs in `localStorage`, build SQL with template literals, leave `// ... rest of the code ...` elision markers behind, and coat every landing page in "It's not just a tool — it's a game changer" prose.
 
@@ -29,13 +28,6 @@ aislopfixer ./path/to/project
 ```
 
 Requires **Python ≥ 3.11** on your machine. On first run the npm launcher builds a small isolated Python environment under `~/.aislopfixer/` (needs internet once), then starts instantly thereafter.
-
-Or straight from PyPI / source:
-
-```bash
-pip install aislopfixer          # or: pip install -e . from a checkout
-aislopfixer ./path/to/project
-```
 
 ## What it detects
 
@@ -126,7 +118,8 @@ Everything you resolve or dismiss is remembered in `<project>/.aislopfixer/`:
 
 ```bash
 aislopfixer . --check                    # print findings, exit 1 if any warning+
-aislopfixer . --check --fail-on error    # only hard errors gate the build
+aislopfixer . --check --fail-on risky    # gate on application problems only ← recommended
+aislopfixer . --check --fail-on broken   # only code that doesn't work gates the build
 aislopfixer . --json                     # machine-readable output
 aislopfixer . --sarif > slop.sarif       # SARIF 2.1.0 for GitHub code scanning
 aislopfixer . --fix                      # apply safe auto-fixes, then report the rest
@@ -134,7 +127,9 @@ aislopfixer . --check --min-confidence 0.8
 aislopfixer . --fix --prompt > fix-brief.md   # auto-fix the safe ones, brief your AI on the rest
 ```
 
-Exit codes: `0` clean, `1` findings at/above `--fail-on` (default `warning`), `2` usage error. The project's `.aislopfixer` memory applies in CI too — vetted false positives stay silent (disable with `--no-store`).
+`--fail-on` takes either axis. **Impact** — `risky` (any application problem) or `broken` (only code that does not work) — is what you usually want in CI: it gates on the same split the TUI and the fix brief lead on, so a page whose only sin is the word "seamless" never turns the build red. **Severity** — `info`/`warning`/`error` — still works, and `never` always exits 0.
+
+Exit codes: `0` clean, `1` something tripped `--fail-on` (default `warning`), `2` usage error. The project's `.aislopfixer` memory applies in CI too — vetted false positives stay silent (disable with `--no-store`).
 
 GitHub Actions — one step, PR annotations included via code scanning:
 
@@ -147,15 +142,6 @@ GitHub Actions — one step, PR annotations included via code scanning:
 - uses: github/codeql-action/upload-sarif@v3   # optional, annotates the PR
   if: always()
   with: { sarif_file: slop.sarif }
-```
-
-Or plain pip:
-
-```yaml
-- uses: actions/setup-python@v5
-  with: { python-version: "3.12" }
-- run: pip install aislopfixer
-- run: aislopfixer . --check --fail-on error
 ```
 
 pre-commit:
@@ -175,7 +161,7 @@ Optional `.aislopfixer.toml` at the project root — CLI flags always win:
 ```toml
 disable = ["design.emoji_ui", "buzzword.delve"]  # rule-id prefixes to turn off
 ignore = ["legacy/**", "third_party/**"]          # path globs to skip entirely
-fail_on = "error"        # headless exit-code threshold (info|warning|error|never)
+fail_on = "risky"        # exit-code gate: broken|risky (impact) or info|warning|error|never
 min_confidence = 0.5     # headless reporting floor, 0..1
 ```
 
@@ -183,7 +169,7 @@ min_confidence = 0.5     # headless reporting floor, 0..1
 
 ## Scoring
 
-Every finding carries a confidence (0–1) from a per-rule table, falling back to category × severity. Weak signals **corroborate**: when several independent AI-authorship tells co-occur in one file (an elision marker + a stub + a debug log), every finding there gets boosted. File score is a noisy-OR; the project score is a self-weighted mean, so one sloppy file isn't diluted by fifty clean ones. Confidence gates bulk auto-fix (≥ 0.60) and is yours to threshold in CI.
+Every finding carries a confidence (0–1) from a per-rule table, falling back to category × severity. Weak signals **corroborate**: when several independent AI-authorship tells co-occur in one file (an elision marker + a stub + a debug log), every finding there gets boosted. The file score is an impact-weighted noisy-OR — findings accumulate within their impact class, and each class is capped, so a pile of buzzwords can never read like a shipped vulnerability. The project score is a self-weighted mean, so one sloppy file isn't diluted by fifty clean ones. Confidence gates bulk auto-fix (≥ 0.60) and is yours to threshold in CI.
 
 ## Supported files
 
@@ -204,7 +190,7 @@ src/aislopfixer/
 ├── store.py          # .aislopfixer/ project memory (allowlist, ledger, report)
 ├── engine/
 │   ├── runner.py     # run rules → dedupe → collapse → containment → corroborate
-│   ├── scoring.py    # confidence table, noisy-OR file score, project score
+│   ├── scoring.py    # confidence + impact tables, impact-weighted file score
 │   ├── context.py    # prose regions + string/comment masking (the FP killer)
 │   └── rules/        # ai_leaks, placeholders, buzzwords, prose_tells, copy_slop,
 │                     #   duplicates, accessibility, codegen, design_slop,
