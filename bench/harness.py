@@ -1,61 +1,68 @@
-"""Scoring for the calibration corpus."""
+"""Score the corpus and report where each case landed against its band."""
 
 from __future__ import annotations
 
-from aislopfixer.engine.models import SourceFile
-from aislopfixer.engine.runner import run_file_rules
+from dataclasses import dataclass
+
+from aislopfixer.design.project import scan_project
+
+from .cases import CASES, Case
 
 
-def _findings(case: dict):
-    name = case["filename"]
-    sf = SourceFile(abs_path=name, rel_path=name, text=case["text"])
-    return run_file_rules(sf)
+@dataclass
+class Outcome:
+    case: Case
+    template: float
+    decisions: float
+    repetition: float
+    fired: set[str]
+
+    @property
+    def missing(self) -> list[str]:
+        return [o for o in self.case.must_observe if o not in self.fired]
+
+    @property
+    def spurious(self) -> list[str]:
+        return [o for o in self.case.must_not_observe if o in self.fired]
+
+    @property
+    def in_band(self) -> bool:
+        lo, hi = self.case.template
+        dlo, dhi = self.case.decisions
+        return lo <= self.template <= hi and dlo <= self.decisions <= dhi
+
+    @property
+    def ok(self) -> bool:
+        return self.in_band and not self.missing and not self.spurious
 
 
-def evaluate(cases: list[dict]) -> dict:
-    """Return recall over expected detections and false positives on clean files."""
-    tp = fn = clean_fp = 0
-    missed: list[tuple[str, str, list[str]]] = []
-    fp_detail: list[tuple[str, list[str]]] = []
-    for c in cases:
-        ids = [f.rule_id for f in _findings(c)]
-        if c.get("clean"):
-            if ids:
-                clean_fp += len(ids)
-                fp_detail.append((c["name"], ids))
-            continue
-        for pref in c["expect"]:
-            if any(rid.startswith(pref) for rid in ids):
-                tp += 1
-            else:
-                fn += 1
-                missed.append((c["name"], pref, ids))
-    total = tp + fn
-    return {
-        "tp": tp,
-        "fn": fn,
-        "recall": (tp / total) if total else 1.0,
-        "clean_fp": clean_fp,
-        "missed": missed,
-        "fp_detail": fp_detail,
-    }
+def evaluate(case: Case) -> Outcome:
+    report, _ = scan_project(case.path)
+    return Outcome(
+        case=case,
+        template=report.template_score,
+        decisions=report.decision_density,
+        repetition=report.repetition,
+        fired={o.id for o in report.observations},
+    )
 
 
-def format_report(r: dict) -> str:
-    lines = [
-        "AI Slop Fixer — calibration",
-        "=" * 32,
-        f"recall          {r['recall'] * 100:5.1f}%   ({r['tp']}/{r['tp'] + r['fn']} expected detections)",
-        f"clean-file FPs  {r['clean_fp']:5d}",
-    ]
-    if r["missed"]:
-        lines.append("")
-        lines.append("MISSED (expected but not detected):")
-        for name, pref, ids in r["missed"]:
-            lines.append(f"  - {name}: expected '{pref}'  got {ids}")
-    if r["fp_detail"]:
-        lines.append("")
-        lines.append("FALSE POSITIVES on clean files:")
-        for name, ids in r["fp_detail"]:
-            lines.append(f"  - {name}: {ids}")
-    return "\n".join(lines)
+def run() -> list[Outcome]:
+    return [evaluate(c) for c in CASES]
+
+
+def twin_gaps(outcomes: list[Outcome]) -> list[tuple[str, str, float]]:
+    """``(case, twin, template-score gap)`` for every declared twin pair.
+
+    Two cases that are the same design in different stacks must score the same;
+    the gap between them measures how much of the score is about the framework
+    rather than the design.
+    """
+    by_name = {o.case.name: o for o in outcomes}
+    out: list[tuple[str, str, float]] = []
+    for o in outcomes:
+        twin = by_name.get(o.case.twin_of)
+        if twin is not None:
+            out.append((o.case.name, twin.case.name,
+                        abs(o.template - twin.template)))
+    return out

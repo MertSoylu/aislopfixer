@@ -1,17 +1,13 @@
 """Project configuration — ``.aislopfixer.toml`` at the scanned root.
 
-Optional; every key has a default, and CLI flags always win over the file.
-Loaded once per scan inside :func:`aislopfixer.pipeline.scan_project`, so the
-TUI and headless mode honor the same config.
+Optional; every key has a default. Loaded once per scan by
+:func:`aislopfixer.design.project.load_documents`.
 
 ```toml
 # .aislopfixer.toml
-disable = ["design.emoji_ui", "buzzword.delve"]  # rule-id prefixes to turn off
-ignore = ["legacy/**", "third_party/**"]          # path globs to skip entirely
-fail_on = "risky"          # headless exit-code gate
-                           #   impact:   broken | risky      (risky = any application problem)
-                           #   severity: info | warning | error | never
-min_confidence = 0.5       # headless reporting floor, 0..1
+ignore = ["legacy/**", "third_party/**"]   # path globs to skip entirely
+disable = ["copy.cta_pair"]                # observation ids to leave out
+pages = ["app/(marketing)"]                # measure only this site in the repo
 ```
 """
 
@@ -20,20 +16,21 @@ from __future__ import annotations
 import fnmatch
 import sys
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 CONFIG_NAME = ".aislopfixer.toml"
-
-_VALID_FAIL_ON = {"broken", "risky", "info", "warning", "error", "never"}
 
 
 @dataclass
 class Config:
     disable: tuple[str, ...] = ()
     ignore: tuple[str, ...] = ()
-    fail_on: str | None = None
-    min_confidence: float | None = None
+    # Path prefixes of the *site* to measure inside a larger repository. Unlike
+    # ``ignore`` this does not stop anything being read: components and
+    # stylesheets outside it are still parsed, and the pages under it are still
+    # expanded with them. See :mod:`aislopfixer.design.scope`.
+    pages: tuple[str, ...] = ()
 
     @classmethod
     def load(cls, root: str) -> "Config":
@@ -57,34 +54,24 @@ class Config:
             )
             return ()
 
-        fail_on = data.get("fail_on")
-        if fail_on is not None and fail_on not in _VALID_FAIL_ON:
-            print(
-                f"aislopfixer: {CONFIG_NAME}: fail_on must be one of "
-                f"{sorted(_VALID_FAIL_ON)}",
-                file=sys.stderr,
-            )
-            fail_on = None
-
-        min_conf = data.get("min_confidence")
-        if min_conf is not None and not (
-            isinstance(min_conf, (int, float)) and 0.0 <= min_conf <= 1.0
-        ):
-            print(
-                f"aislopfixer: {CONFIG_NAME}: min_confidence must be 0..1",
-                file=sys.stderr,
-            )
-            min_conf = None
-
         return cls(
             disable=str_list("disable"),
             ignore=str_list("ignore"),
-            fail_on=fail_on,
-            min_confidence=None if min_conf is None else float(min_conf),
+            pages=str_list("pages"),
         )
 
-    def rule_disabled(self, rule_id: str) -> bool:
-        return any(rule_id.startswith(p) for p in self.disable)
+    def with_pages(self, pages) -> "Config":
+        """A copy scoped to ``pages``; the command line wins over the file."""
+        from dataclasses import replace as _replace
+
+        from .design.scope import normalise
+
+        found = normalise(pages)
+        return _replace(self, pages=found) if found else self
+
+    def observation_disabled(self, obs_id: str) -> bool:
+        """True when an observation id matches a ``disable`` prefix."""
+        return any(obs_id.startswith(p) for p in self.disable)
 
     def path_ignored(self, rel_path: str) -> bool:
         """Match ``rel_path`` (either separator) against the ignore globs.

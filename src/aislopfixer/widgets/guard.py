@@ -20,7 +20,6 @@ class TooSmall(Static):
 
     def __init__(self, min_w: int, min_h: int, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.add_class("guard")
         self._min_w = min_w
         self._min_h = min_h
         self._w = 0

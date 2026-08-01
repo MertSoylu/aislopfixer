@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<!--
+  Half of the corpus's clean-side twin pair. `clean_css` is the same design —
+  the same markup, the same values, the same decisions — written as raw CSS
+  instead of utilities.
+
+  The twin rule was tested four times on the slop side and never once on the
+  clean side, and the gap it exists to catch is real: `Origin.ARBITRARY` and
+  `Origin.LITERAL` both weigh 1.0, but `text-[2.75rem]` is a value written to
+  *break* a scale while `font-size: 2.75rem` is what a scaleless world looks
+  like. If the two halves of this pair drift apart, the fix is
+  `parse/css.py`'s normalisation table, not the weights.
+
+  Everything here is authored: the type ramp is arbitrary values with a config
+  behind it, the rhythm is a four-step scale nobody ships, the palette is one
+  hue mixed by hand.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cold Store — a fishmonger on the harbour</title>
+  <link rel="stylesheet" href="/build/site.css">
+</head>
+<body class="bg-[#f7f5f0] text-[#1b2426] font-sans">
+
+  <nav class="border-b border-[#d8d3c8]">
+    <div class="max-w-[68rem] mx-auto px-[1.75rem] py-[1.25rem] flex justify-between items-baseline">
+      <span class="text-[0.95rem] tracking-[0.22em] uppercase">Cold Store</span>
+      <a href="#hours" class="text-[0.85rem] text-[#5d6a6c] underline">Opening hours</a>
+    </div>
+  </nav>
+
+  <header class="pt-[7.5rem] pb-[3.25rem]">
+    <div class="max-w-[68rem] mx-auto px-[1.75rem] grid md:grid-cols-[3fr_2fr] gap-[3.5rem]">
+      <h1 class="font-serif text-[3.4rem] leading-[1.04] tracking-[-0.02em]">
+        Whatever the boats brought in, cut while you decide what to do with it.
+      </h1>
+      <p class="self-end text-[1.15rem] leading-[1.65] text-[#5d6a6c]">
+        Two counters, one of them ice. We buy off four boats and stop buying when the
+        slab is full, which is usually before eleven and sometimes before nine.
+      </p>
+    </div>
+  </header>
+
+  <section class="pb-[3.25rem]">
+    <img src="/photos/slab.jpg" alt="A marble slab under crushed ice, half filled"
+         class="w-full h-[24rem] object-cover">
+  </section>
+
+  <section class="py-[2.5rem] border-y border-[#d8d3c8]">
+    <div class="max-w-[68rem] mx-auto px-[1.75rem] grid md:grid-cols-[2fr_3fr] gap-[3.5rem]">
+      <h2 class="text-[0.85rem] tracking-[0.22em] uppercase text-[#5d6a6c]">On the slab</h2>
+      <div class="text-[1.05rem] leading-[1.7]">
+        <p class="mb-[1.1rem]">
+          Turbot when there is turbot, which there is not often. Otherwise plaice, hake,
+          gurnard, and whatever the crab boat has decided to sell us rather than send south.
+        </p>
+        <p>
+          We fillet at the counter and we will not do it in advance, because a fillet that
+          has sat an hour is a different fish from the one you were shown.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-[6.5rem]">
+    <div class="max-w-[68rem] mx-auto px-[1.75rem] grid md:grid-cols-[1fr_1fr_2fr] gap-[3.5rem]">
+      <p class="text-[0.85rem] tracking-[0.22em] uppercase text-[#5d6a6c]">Since 1961</p>
+      <p class="text-[0.85rem] tracking-[0.22em] uppercase text-[#5d6a6c]">Four boats</p>
+      <p class="text-[1.15rem] leading-[1.65]">
+        The shop has changed hands twice and the ice machine three times. The slab is the
+        original and will outlast all of us.
+      </p>
+    </div>
+  </section>
+
+  <section id="hours" class="py-[2.5rem] bg-[#e8e3d8]">
+    <div class="max-w-[68rem] mx-auto px-[1.75rem] grid md:grid-cols-[2fr_3fr] gap-[3.5rem]">
+      <h2 class="text-[0.85rem] tracking-[0.22em] uppercase text-[#5d6a6c]">Hours</h2>
+      <div class="text-[1.05rem] leading-[1.7]">
+        <p class="mb-[1.1rem]">Tuesday to Saturday, from seven until the slab is bare.</p>
+        <p>Closed Monday. Closed whenever the boats stay in, which the board outside says.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="py-[2.5rem] border-t border-[#d8d3c8]">
+    <div class="max-w-[68rem] mx-auto px-[1.75rem] flex justify-between text-[0.85rem] text-[#5d6a6c]">
+      <span>Cold Store, Fish Quay</span>
+      <a href="tel:+441912000000" class="underline">0191 200 0000</a>
+    </div>
+  </footer>
+
+</body>
+</html>

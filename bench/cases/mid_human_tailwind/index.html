@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<!--
+  The hardest case in the corpus: a real person wrote this, in a hurry, using
+  nothing but Tailwind defaults. No tokens, no arbitrary values, stock palette.
+  A detector that keys on "did you use the default scale" will call it slop.
+
+  What makes it not slop is everything the generated page lacks: bands sized to
+  their content, an asymmetric split, headings that say something, sections in
+  an order the subject dictated, and copy of wildly different lengths. The
+  engine is expected to land this in the middle — some decisions missing, but
+  nowhere near the template.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copper Kettle — a very small tea importer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-stone-50 text-stone-900">
+
+  <nav class="border-b border-stone-200">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex justify-between items-center">
+      <span class="font-serif text-lg">Copper Kettle</span>
+      <a href="#order" class="text-sm text-stone-600 underline">Order</a>
+    </div>
+  </nav>
+
+  <header class="pt-24 pb-12">
+    <div class="max-w-5xl mx-auto px-6 grid md:grid-cols-3 gap-10">
+      <h1 class="md:col-span-2 font-serif text-6xl leading-none text-stone-900">
+        We buy about four hundred kilos of tea a year.
+      </h1>
+      <p class="text-stone-600 self-end">
+        That is not very much. It is roughly what one supermarket sells in a morning.
+        We think this is the point.
+      </p>
+    </div>
+  </header>
+
+  <section class="pb-16">
+    <img src="/photos/drying-floor.jpg" alt="Withering troughs at the Kanyang factory, half loaded" class="w-full h-96 object-cover">
+  </section>
+
+  <section class="py-12 bg-white border-y border-stone-200">
+    <div class="max-w-3xl mx-auto px-6">
+      <h2 class="font-serif text-3xl mb-6">Where it comes from</h2>
+      <p class="text-stone-700 mb-4">
+        Four gardens, three of them in Nepal, one in the Nilgiris. We have visited all of
+        them and we buy from the same people every year, which means when a harvest is
+        bad we buy it anyway and sell it cheaper rather than going somewhere else. This
+        is a slow way to run an import business and it is the only reason the tea is any
+        good.
+      </p>
+      <p class="text-stone-700">
+        The Nilgiri garden is the odd one out — it is the only estate we work with that
+        is larger than forty hectares, and we buy from a single block on the eastern
+        slope rather than from the estate as a whole.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-16">
+    <div class="max-w-5xl mx-auto px-6">
+      <h2 class="font-serif text-3xl mb-8">This spring</h2>
+      <div class="grid md:grid-cols-2 gap-8">
+        <article class="bg-white border border-stone-200 p-6">
+          <h3 class="font-serif text-2xl mb-2">Jun Chiyabari, first flush</h3>
+          <p class="text-stone-700 mb-3">
+            Picked on 4 April, a week later than last year because the rain came late.
+            Lighter than the 2025 lot, more apricot than muscat, and it goes flat if you
+            brew it above 85°C, so please do not.
+          </p>
+          <p class="text-sm text-stone-500">£14 / 50g · 22kg remaining</p>
+        </article>
+        <article class="bg-white border border-stone-200 p-6">
+          <h3 class="font-serif text-2xl mb-2">Kanyang, second flush</h3>
+          <p class="text-stone-700 mb-3">
+            The one we drink at the shop. Sold out by August every year.
+          </p>
+          <p class="text-sm text-stone-500">£11 / 50g · 61kg remaining</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-16 bg-stone-100">
+    <div class="max-w-3xl mx-auto px-6">
+      <h2 class="font-serif text-3xl mb-6">A note about "single origin"</h2>
+      <p class="text-stone-700">
+        The phrase has stopped meaning anything. A single origin tea can come from a
+        thousand hectares and six hundred pickers, which is not a meaningfully different
+        claim from a blend. We list the garden, the block and the picking date instead,
+        because those are the three things that actually change what is in the cup.
+      </p>
+    </div>
+  </section>
+
+  <section id="order" class="py-20">
+    <div class="max-w-3xl mx-auto px-6">
+      <h2 class="font-serif text-4xl mb-4">Ordering</h2>
+      <p class="text-stone-700 mb-6">
+        There is no shop. Email us what you want and we will send an invoice and a
+        parcel, usually the same week. Wholesale is a different conversation and we are
+        currently full.
+      </p>
+      <a href="mailto:tea@copperkettle.co.uk" class="text-lg text-stone-900 underline">tea@copperkettle.co.uk</a>
+    </div>
+  </section>
+
+  <footer class="py-8 border-t border-stone-200">
+    <div class="max-w-5xl mx-auto px-6 text-sm text-stone-500">
+      Copper Kettle Ltd, Sheffield. Registered 11482910.
+    </div>
+  </footer>
+
+</body>
+</html>

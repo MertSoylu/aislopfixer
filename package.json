@@ -1,13 +1,14 @@
 {
   "name": "@mertsoylu/aislopfixer",
-  "version": "0.6.0",
-  "description": "Terminal TUI that finds and fixes AI-generated slop in local web projects (offline, rule-based).",
+  "version": "0.7.0",
+  "description": "Terminal TUI that measures how templated a web project's design is, and rewrites it onto a system of its own (offline).",
   "bin": {
     "aislopfixer": "bin/cli.js"
   },
   "scripts": {
-    "dev": "python -m aislopfixer ./sample",
-    "dev:watch": "textual run --dev src/aislopfixer/app.py -- ./sample",
+    "dev": "python -m aislopfixer ./bench/cases/slop_saas",
+    "dev:watch": "textual run --dev src/aislopfixer/app.py -- ./bench/cases/slop_saas",
+    "bench": "python -m bench.run",
     "prepack": "node scripts/clean.mjs"
   },
   "files": [
@@ -23,13 +24,13 @@
   "keywords": [
     "ai",
     "slop",
-    "linter",
+    "design",
+    "design-system",
+    "tailwind",
     "tui",
     "cli",
     "textual",
-    "placeholder",
-    "lorem-ipsum",
-    "code-quality",
+    "refactor",
     "web"
   ],
   "author": "mertsoylu",

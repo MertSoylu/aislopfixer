@@ -1,0 +1,57 @@
+/*
+  The clean twin of `slop_kit`, at the same size and in the same shape of
+  project. Everything the kit leaves on the framework is decided here — and
+  decided as a *system*, so the ramp below is one decision, not eleven.
+*/
+@theme {
+  --color-paper: #f4f1ea;
+  --color-ink: #17181b;
+  --color-ink-soft: #4a4d55;
+  --color-rule: #ddd6c8;
+  --color-clay: #9a4b2f;
+  --color-moss: #3f5c3a;
+
+  --text-meta: 0.78rem;
+  --text-meta--line-height: 1.5;
+  --text-meta--letter-spacing: 0.14em;
+  --text-body: 1.06rem;
+  --text-body--line-height: 1.68;
+  --text-lede: 1.42rem;
+  --text-lede--line-height: 1.42;
+  --text-title: 2.35rem;
+  --text-title--line-height: 1.1;
+  --text-title--letter-spacing: -0.018em;
+  --text-plate: 4.4rem;
+  --text-plate--line-height: 0.92;
+  --text-plate--letter-spacing: -0.032em;
+
+  --font-serif: Arnhem, Georgia, serif;
+  --font-sans: 'Untitled Sans', system-ui, sans-serif;
+
+  --radius-panel: 3px;
+  --radius-pill: 999px;
+
+  --shadow-lift: 0 18px 40px -28px rgba(23, 24, 27, 0.55);
+  --shadow-press: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  --ease-plate: cubic-bezier(0.16, 0.84, 0.44, 1);
+}
+
+.plate {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-serif);
+  padding-block: 8.5rem;
+}
+
+.measure {
+  max-width: 34rem;
+}
+
+.wide {
+  max-width: 74rem;
+}
+
+.rule {
+  border-top: 1px solid var(--color-rule);
+}

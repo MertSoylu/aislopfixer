@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<!--
+  A generated dashboard shell that claims a dark mode. The nav and the hero got
+  their `dark:` pairs because they were written first; the cards, the table and
+  the footer did not. Opening the toggle leaves half the page white.
+
+  Its twin is clean_dark_kit: the same page, same framework, same size, with the
+  claim actually finished. Only this one may fire color.partial_dark.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cadence — usage</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100">
+
+  <nav class="border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+    <div class="mx-auto max-w-6xl px-5 h-14 flex items-center justify-between">
+      <span class="font-semibold text-gray-900 dark:text-slate-100">Cadence</span>
+      <button class="rounded-md px-3 py-1.5 text-sm text-white bg-blue-600 outline-none">Invite</button>
+    </div>
+  </nav>
+
+  <header class="py-14 bg-gray-50 dark:bg-slate-800">
+    <div class="mx-auto max-w-6xl px-5">
+      <h1 class="text-3xl font-bold text-gray-900 dark:text-slate-100">Usage this month</h1>
+      <p class="mt-2 text-gray-600 dark:text-slate-400">Everything metered, nothing rounded up.</p>
+    </div>
+  </header>
+
+  <section class="py-14">
+    <div class="mx-auto max-w-6xl px-5 grid md:grid-cols-3 gap-6">
+      <div class="rounded-xl border border-gray-200 bg-white p-5">
+        <p class="text-sm text-gray-500">Requests</p>
+        <p class="text-2xl font-semibold text-gray-900">1.24M</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-5">
+        <p class="text-sm text-gray-500">Storage</p>
+        <p class="text-2xl font-semibold text-gray-900">318 GB</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-5">
+        <p class="text-sm text-gray-500">Seats</p>
+        <p class="text-2xl font-semibold text-gray-900">41</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-10 bg-gray-50">
+    <div class="mx-auto max-w-6xl px-5">
+      <h2 class="text-xl font-semibold text-gray-900 mb-4">Recent invoices</h2>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-200 text-gray-500">
+            <th class="py-2">Period</th><th class="py-2">Amount</th><th class="py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="border-b border-gray-200">
+            <td class="py-3 text-gray-900">June 2026</td>
+            <td class="py-3 text-gray-900">$412.00</td>
+            <td class="py-3"><a href="#" class="text-blue-600 outline-none">Download</a></td>
+          </tr>
+          <tr class="border-b border-gray-200">
+            <td class="py-3 text-gray-900">May 2026</td>
+            <td class="py-3 text-gray-900">$388.50</td>
+            <td class="py-3"><a href="#" class="text-blue-600 outline-none">Download</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="py-8 border-t border-gray-200 bg-white">
+    <div class="mx-auto max-w-6xl px-5 flex justify-between text-sm text-gray-500">
+      <span>Cadence Metering Ltd</span>
+      <a href="#" class="text-gray-500">Status</a>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aislopfixer"
-version = "0.6.0"
-description = "Terminal TUI that finds and fixes AI-generated slop in local web projects"
+version = "0.7.0"
+description = "Terminal TUI that measures how templated a web project's design is, and rewrites it onto a system of its own"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "mertsoylu" }]
-keywords = ["ai", "slop", "linter", "tui", "code-quality", "sarif", "textual"]
+keywords = ["ai", "slop", "design", "design-system", "tailwind", "tui", "textual"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",

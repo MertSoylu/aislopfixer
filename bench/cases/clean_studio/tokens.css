@@ -1,0 +1,89 @@
+/* The design system the page reads from. A stylesheet like this is the single
+   strongest evidence of authored design the engine can see: named roles, a
+   tinted neutral ramp, and a type scale that is not the framework's. */
+
+:root {
+  /* Neutral ramp, warmed 34° off the paper stock we print on. */
+  --color-paper:      #faf7f2;
+  --color-shell:      #f2ede4;
+  --color-ink:        #1c1917;
+  --color-ink-muted:  #57534e;
+  --color-ink-faint:  #8a827b;
+  --color-rule:       #e0d9cd;
+  /* Two chromatics: one for action, one for editorial marks. */
+  --color-clay:       #a8442a;
+  --color-slate-deep: #2f4858;
+
+  /* Type scale, 1.28 ratio from a 17px body — not the framework ramp. */
+  --text-body:        1.0625rem;
+  --text-lead:        1.375rem;
+  --text-title:       1.75rem;
+  --text-section:     2.5rem;
+  --text-display:     4.25rem;
+
+  --leading-display:  0.95;
+  --leading-title:    1.15;
+  --leading-body:     1.7;
+  --tracking-display: -0.035em;
+  --tracking-title:   -0.02em;
+
+  /* Band rhythm by role, not one value. */
+  --band-open:        7.5rem;
+  --band-narrative:   7rem;
+  --band-dense:       4rem;
+  --band-close:       2.5rem;
+
+  --measure-read:     46ch;
+  --measure-content:  74rem;
+  --measure-narrow:   62rem;
+
+  --radius-panel:     2px;
+  --radius-control:   6px;
+
+  --shadow-lift:      0 1px 2px rgb(28 25 23 / 0.06);
+  --shadow-float:     0 12px 32px -12px rgb(28 25 23 / 0.28);
+
+  --ease-exit:        cubic-bezier(0.32, 0, 0.67, 0);
+  --ease-enter:       cubic-bezier(0.33, 1, 0.68, 1);
+  --dur-tint:         150ms;
+  --dur-move:         280ms;
+}
+
+body {
+  font-family: "Söhne", ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--color-ink);
+  background-color: var(--color-paper);
+  font-optical-sizing: auto;
+  text-wrap: pretty;
+}
+
+.font-display {
+  font-family: "Signifier", Georgia, serif;
+  font-optical-sizing: auto;
+  text-wrap: balance;
+}
+
+.panel {
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--color-rule);
+  background-color: var(--color-paper);
+}
+
+.panel--raised {
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-float);
+  border: 0;
+}
+
+.control {
+  border-radius: var(--radius-control);
+  transition-property: color, background-color, border-color;
+  transition-duration: var(--dur-tint);
+  transition-timing-function: var(--ease-enter);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control { transition-duration: 1ms; }
+}

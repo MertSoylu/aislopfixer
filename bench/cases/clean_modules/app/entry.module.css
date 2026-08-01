@@ -1,0 +1,35 @@
+/*
+  A second module, imported under a different local name, so the resolver is
+  exercised on the thing that actually varies in real projects: `styles`, `s`,
+  `entry` — the binding is arbitrary and the import specifier is what resolves.
+*/
+
+.entry {
+  border: 1px solid #e3e0d8;
+  padding: 1.75rem;
+}
+
+.entry h3 {
+  font-size: 1.28rem;
+  letter-spacing: -0.008em;
+  margin-bottom: 0.7rem;
+}
+
+.entry p {
+  font-size: 0.94rem;
+  line-height: 1.62;
+  color: #5b5f6b;
+}
+
+.wide {
+  padding: 2.6rem;
+  background: #f2efe8;
+}
+
+.stamp {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #b4451f;
+  margin-bottom: 1.1rem;
+}

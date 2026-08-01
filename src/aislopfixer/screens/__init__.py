@@ -1,17 +1,17 @@
-"""TUI screens."""
+"""TUI screens: splash → path → scan → report → system → summary."""
 
-from .modal import PromptModal
 from .path import PathScreen
-from .results import ResultsScreen
+from .report import ReportScreen
 from .scan import ScanScreen
 from .splash import SplashScreen
 from .summary import SummaryScreen
+from .system import SystemScreen
 
 __all__ = [
-    "PromptModal",
     "PathScreen",
-    "ResultsScreen",
+    "ReportScreen",
     "ScanScreen",
     "SplashScreen",
     "SummaryScreen",
+    "SystemScreen",
 ]

@@ -1,0 +1,42 @@
+/*
+  A *commercial* landing template: made by designers, sold as a starting point.
+  The distinction this case exists to pin is the one `bench/field.md` kept
+  getting wrong — "everyone's page" and "nobody decided anything" are not the
+  same claim, and only the second one is what the two axes measure.
+
+  What was decided here: a type ramp with its own leading and tracking, a motion
+  vocabulary with authored curves and durations. What was not: the palette (the
+  shipped indigo, straight out of the box) and the spacing scale. The result has
+  to land in the *middle* — above the generated kit, below a designed site.
+*/
+@theme {
+  --text-caption: 0.8rem;
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.08em;
+  --text-body: 1.05rem;
+  --text-body--line-height: 1.65;
+  --text-lede: 1.35rem;
+  --text-lede--line-height: 1.45;
+  --text-lede--letter-spacing: -0.011em;
+  --text-heading: 2.1rem;
+  --text-heading--line-height: 1.15;
+  --text-heading--letter-spacing: -0.021em;
+  --text-display: 3.6rem;
+  --text-display--line-height: 1.02;
+  --text-display--letter-spacing: -0.034em;
+
+  --ease-rise: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-drift: drift 9s ease-in-out infinite;
+  --animate-rise: rise 620ms var(--ease-rise) both;
+}
+
+@keyframes drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}

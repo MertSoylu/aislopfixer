@@ -1,82 +1,96 @@
-"""Shared colors, icons and the shimmer gradient used across the TUI."""
+"""Shared colors, icons and the shimmer gradient used across the TUI.
+
+Every screen pulls its palette from here so the tool's own interface does not
+commit the offence it reports — one accent, one radius, one spacing value.
+"""
 
 from __future__ import annotations
 
 import colorsys
 
-from .engine.models import Category, Impact, Severity
+from .design.models import Axis
 
-CATEGORY_COLORS: dict[Category, str] = {
-    Category.SECURITY: "#ff4d4d",
-    Category.AI_LEAK: "#ff5fd2",
-    Category.PLACEHOLDER: "#fbbf24",
-    Category.BUZZWORD: "#a78bfa",
-    Category.DUPLICATE: "#36e2e6",
-    Category.ACCESSIBILITY: "#4ade80",
-    Category.CODE_SLOP: "#f59e0b",
-    Category.DESIGN: "#f472b6",
+# One hue per axis, spaced around the wheel so eight bars read apart at a
+# glance. Deliberately not a gradient: these are categories, not a scale.
+AXIS_COLORS: dict[Axis, str] = {
+    Axis.TYPE: "#f4a261",
+    Axis.COLOR: "#e879a6",
+    Axis.SPACE: "#36e2e6",
+    Axis.SHAPE: "#9fd356",
+    Axis.LAYOUT: "#a78bfa",
+    Axis.MATERIAL: "#7dd3fc",
+    Axis.MOTION: "#fbbf24",
+    Axis.COPY: "#5eead4",
 }
 
-CATEGORY_ICON: dict[Category, str] = {
-    Category.SECURITY: "⛒",
-    Category.AI_LEAK: "◈",
-    Category.PLACEHOLDER: "▢",
-    Category.BUZZWORD: "✦",
-    Category.DUPLICATE: "⧉",
-    Category.ACCESSIBILITY: "⊙",
-    Category.CODE_SLOP: "⌁",
-    Category.DESIGN: "❖",
+AXIS_ICON: dict[Axis, str] = {
+    Axis.TYPE: "Aa",
+    Axis.COLOR: "◐",
+    Axis.SPACE: "↕",
+    Axis.SHAPE: "▢",
+    Axis.LAYOUT: "▦",
+    Axis.MATERIAL: "◧",
+    Axis.MOTION: "≈",
+    Axis.COPY: "¶",
 }
 
-SEVERITY_COLORS: dict[Severity, str] = {
-    Severity.ERROR: "#f87171",
-    Severity.WARNING: "#fbbf24",
-    Severity.INFO: "#7dd3fc",
-}
 
-SEVERITY_ICON: dict[Severity, str] = {
-    Severity.ERROR: "●",
-    Severity.WARNING: "▲",
-    Severity.INFO: "■",
-}
+def severity_color(value: float) -> str:
+    """An observation's severity, banded.
 
-FIX_ICON: dict[str, str] = {"auto": "⚡", "prompt": "✎", "manual": "⚑"}
-FIX_COLOR: dict[str, str] = {"auto": "#4ade80", "prompt": "#7dd3fc", "manual": "#7b8496"}
+    Severity is continuous, but a continuous colour ramp is unreadable in a
+    list — three bands is what a reader can actually act on.
+    """
+    if value >= 0.75:
+        return "#f87171"
+    if value >= 0.45:
+        return "#fbbf24"
+    return "#7dd3fc"
 
-# Impact is the axis the user acts on, so it is spelled out rather than given a
-# glyph to learn — and only the application problems carry a tag at all, which
-# is what makes them findable in a tree that is mostly POLISH.
-IMPACT_LABEL: dict[Impact, str] = {
-    Impact.BROKEN: "BROKEN",
-    Impact.RISKY: "RISKY",
-    Impact.POLISH: "",
-}
 
-IMPACT_COLORS: dict[Impact, str] = {
-    Impact.BROKEN: "#f87171",
-    Impact.RISKY: "#fbbf24",
-    Impact.POLISH: "#7b8496",
-}
+def score_color(value: float) -> str:
+    """Colour for a 0-100 template score: low is good, high is the template."""
+    if value >= 70:
+        return "#f87171"
+    if value >= 50:
+        return "#fb923c"
+    if value >= 30:
+        return "#fbbf24"
+    return "#4ade80"
 
-# One plain sentence per impact for the detail pane. "manual review" told the
-# user nothing: it was the same words for an SQL injection and for the word
-# "seamless". This says which one they are looking at.
-IMPACT_BLURB: dict[Impact, str] = {
-    Impact.BROKEN: "this code does not work as written — fix before shipping",
-    Impact.RISKY: "it runs, but ships a real hazard",
-    Impact.POLISH: "voice and aesthetics — a simple warning, not a defect",
-}
+
+def meter(value: float, width: int = 24, filled: str = "█", empty: str = "░") -> str:
+    """A 0-100 value as a fixed-width bar."""
+    n = max(0, min(width, round(width * value / 100.0)))
+    return filled * n + empty * (width - n)
+
+
+_SPARK = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(values: list[float]) -> str:
+    """A run of 0-100 scores as one line.
+
+    The scale is fixed to 0–100 rather than to the series' own range: a project
+    that moved from 84 to 81 should look flat, and auto-scaling would draw it
+    as a cliff. The shape has to mean the same thing in every project.
+    """
+    return "".join(
+        _SPARK[max(0, min(len(_SPARK) - 1, int(v / 100.0 * len(_SPARK))))]
+        for v in values
+    )
+
 
 # Core design tokens — every screen/widget should pull colors from here so the
 # palette stays coherent (screens must not re-declare their own hex constants).
 BG = "#0b0e14"        # app background
 PANEL = "#11151f"     # raised card/panel surface
-PANEL_ALT = "#0d111a" # sunken surface (inputs, footer, tree/detail panes)
+PANEL_ALT = "#0d111a" # sunken surface (inputs, footer, list/detail panes)
 BORDER = "#232a38"    # idle border / hairline
 BORDER_MID = "#2a2f3a"
 TEXT = "#cdd6f4"      # primary text
 DIM = "#7b8496"       # secondary text
-FAINT = "#5b647a"     # tertiary text / hints
+FAINT = "#727c94"     # tertiary text / hints (WCAG AA ≥4.5:1 on BG)
 SOURCE = "#8a94a6"    # source-code excerpt text
 MUTED = "#9aa4b8"     # de-emphasized body text (between TEXT and DIM)
 ACCENT = "#36e2e6"    # brand teal

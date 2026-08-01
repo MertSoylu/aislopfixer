@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<!--
+  The clean twin of slop_saas: same framework, same era, same file size — but
+  authored. Named tokens instead of palette shades, three band rhythms instead
+  of one, an asymmetric grid, left-aligned section headings, tuned display
+  type, two surface treatments, and copy whose lengths differ because the
+  sentences differ. If the engine cannot separate this from the generated page,
+  it is measuring Tailwind, not design.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fold — a studio for difficult interfaces</title>
+  <link rel="stylesheet" href="tokens.css">
+</head>
+<body class="bg-paper text-ink">
+
+  <nav class="border-b border-rule">
+    <div class="mx-auto max-w-[74rem] px-6 flex items-baseline justify-between h-[4.5rem]">
+      <span class="font-display text-[1.375rem] tracking-[-0.03em] text-ink">Fold</span>
+      <div class="flex items-baseline gap-7">
+        <a href="#work" class="text-[0.9375rem] text-ink-muted hover:text-ink transition-colors duration-150">Work</a>
+        <a href="#practice" class="text-[0.9375rem] text-ink-muted hover:text-ink transition-colors duration-150">Practice</a>
+        <a href="#contact" class="text-[0.9375rem] text-clay underline underline-offset-4 decoration-clay/40 hover:decoration-clay transition-colors duration-150">Start a project</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="pt-[7.5rem] pb-24">
+    <div class="mx-auto max-w-[74rem] px-6 grid md:grid-cols-12 gap-x-8">
+      <h1 class="md:col-span-7 font-display text-[4.25rem] leading-[0.95] tracking-[-0.035em] text-ink">
+        We work on the screens that other studios hand back.
+      </h1>
+      <p class="md:col-span-4 md:col-start-9 self-end text-[1.0625rem] leading-[1.7] text-ink-muted max-w-[34ch]">
+        Scheduling systems, clinical records, freight dashboards. Interfaces where being
+        wrong is expensive and being pretty is not the point. Twelve years, forty-one
+        products, two people.
+      </p>
+    </div>
+  </header>
+
+  <section class="pb-28">
+    <figure class="w-screen relative left-1/2 -translate-x-1/2">
+      <img src="/media/console.avif" alt="A dispatch console showing eighteen concurrent routes" class="w-full h-[32rem] object-cover">
+      <figcaption class="mx-auto max-w-[74rem] px-6 pt-3 text-[0.8125rem] text-ink-faint">
+        Dispatch console for Meridian Freight, rebuilt in 2025. Ninety-second median task time, down from six minutes.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="work" class="py-16 bg-shell">
+    <div class="mx-auto max-w-[74rem] px-6">
+      <h2 class="font-display text-[2.5rem] leading-[1.05] tracking-[-0.025em] text-ink mb-2">Selected work</h2>
+      <p class="text-[1.0625rem] leading-[1.7] text-ink-muted max-w-[46ch] mb-14">
+        Four projects we can talk about publicly. The rest are behind hospital and
+        freight contracts.
+      </p>
+
+      <div class="grid md:grid-cols-12 gap-x-8 gap-y-16">
+        <article class="md:col-span-7 border-t-2 border-ink pt-5">
+          <h3 class="font-display text-[1.75rem] leading-[1.15] tracking-[-0.02em] mb-3">Meridian Freight</h3>
+          <p class="text-[1.0625rem] leading-[1.7] text-ink-muted">
+            A dispatcher watches eighteen routes at once and cannot afford a modal. We
+            rebuilt the console around a single persistent grid, moved every destructive
+            action behind a hold gesture, and cut median task time from six minutes to
+            ninety seconds. The redesign shipped in eleven weeks with no retraining
+            programme, because the new layout matched the paper sheets dispatchers had
+            been keeping beside their keyboards for years.
+          </p>
+        </article>
+
+        <article class="md:col-span-4 md:col-start-9 border-t border-rule pt-5">
+          <h3 class="font-display text-[1.75rem] leading-[1.15] tracking-[-0.02em] mb-3">Ledger, for St Aubin</h3>
+          <p class="text-[1.0625rem] leading-[1.7] text-ink-muted">
+            Medication reconciliation, on a ward, on a tablet, with gloves on.
+          </p>
+        </article>
+
+        <article class="md:col-span-5 border-t border-rule pt-5">
+          <h3 class="font-display text-[1.75rem] leading-[1.15] tracking-[-0.02em] mb-3">Kestrel</h3>
+          <p class="text-[1.0625rem] leading-[1.7] text-ink-muted">
+            An internal tool that three hundred people use daily and nobody has ever
+            filed a complaint about. We consider this the best thing on the page.
+          </p>
+        </article>
+
+        <article class="md:col-span-6 md:col-start-7 border-t border-rule pt-5">
+          <h3 class="font-display text-[1.75rem] leading-[1.15] tracking-[-0.02em] mb-3">Halyard Charts</h3>
+          <p class="text-[1.0625rem] leading-[1.7] text-ink-muted">
+            Tide and depth data for small-craft navigation. The hard part was colour:
+            the palette had to survive direct sunlight, a cracked screen protector and
+            the red night-vision filter, so we designed it in three states and tested it
+            on a boat.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="practice" class="py-28">
+    <div class="mx-auto max-w-[62rem] px-6">
+      <h2 class="font-display text-[2.5rem] leading-[1.05] tracking-[-0.025em] mb-8">How we actually work</h2>
+      <div class="grid md:grid-cols-2 gap-x-14 gap-y-8 text-[1.0625rem] leading-[1.75] text-ink-muted">
+        <p>
+          We start by watching. Two days on site, no slides, no questions that begin with
+          "wouldn't it be nice if". Most of what we end up changing was never in the brief.
+        </p>
+        <p>
+          We write the interface copy before the layout. If a screen cannot be explained
+          in a sentence, the sentence is the problem, not the screen.
+        </p>
+        <p>
+          We ship in slices and we sit with the people using them. A design that survives
+          contact with a Tuesday afternoon is worth more than one that survives a review.
+        </p>
+        <p>
+          We do not do brand work, decks, or "digital transformation". There are studios
+          that are good at those and we are not among them.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact" class="py-20 bg-ink text-paper">
+    <div class="mx-auto max-w-[74rem] px-6 grid md:grid-cols-12 gap-x-8 items-end">
+      <h2 class="md:col-span-8 font-display text-[3rem] leading-[1.0] tracking-[-0.03em]">
+        Tell us what is going wrong.
+      </h2>
+      <p class="md:col-span-3 md:col-start-10 text-[1.0625rem] leading-[1.7] text-paper/70">
+        <a href="mailto:studio@fold.works" class="underline underline-offset-4 decoration-paper/40 hover:decoration-paper transition-colors duration-150">studio@fold.works</a><br>
+        Bristol, and wherever the users are.
+      </p>
+    </div>
+  </section>
+
+  <footer class="py-10 border-t border-rule">
+    <div class="mx-auto max-w-[74rem] px-6 flex justify-between text-[0.8125rem] text-ink-faint">
+      <span>Fold Studio Ltd, 09482217</span>
+      <span>Set in Söhne and Signifier</span>
+    </div>
+  </footer>
+
+</body>
+</html>

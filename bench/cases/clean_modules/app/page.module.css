@@ -1,0 +1,123 @@
+/*
+  The clean twin for CSS Modules. Nothing here is a utility class, so before the
+  module resolver existed every element on the page carried zero declarations
+  and the project measured as empty — which reads as clean for the wrong reason.
+  It has to read as clean for the right one.
+*/
+
+.shell {
+  --ink: #17181c;
+  --ink-soft: #5b5f6b;
+  --paper: #fbfaf7;
+  --rule: #e3e0d8;
+  --signal: #b4451f;
+
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Söhne", ui-sans-serif, system-ui;
+}
+
+.masthead {
+  padding: 1.6rem 2rem;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.wordmark {
+  font-size: 1.05rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hero {
+  padding: 7.5rem 2rem 4rem;
+  max-width: 78rem;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 7fr 4fr;
+  gap: 4.5rem;
+  align-items: end;
+}
+
+.headline {
+  font-size: 4.4rem;
+  line-height: 0.96;
+  letter-spacing: -0.028em;
+  font-weight: 500;
+}
+
+.standfirst {
+  font-size: 1.22rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.plate {
+  padding: 0 0 5rem;
+  width: 100%;
+}
+
+.plate img {
+  width: 100%;
+  height: 34rem;
+  object-fit: cover;
+}
+
+.argument {
+  padding: 3.25rem 2rem;
+  max-width: 40rem;
+  margin: 0 auto;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.argument p {
+  font-size: 1.06rem;
+  line-height: 1.66;
+  color: var(--ink-soft);
+  margin-bottom: 1.4rem;
+}
+
+.subhead {
+  font-size: 1.85rem;
+  letter-spacing: -0.012em;
+  margin-bottom: 1.4rem;
+}
+
+.work {
+  padding: 6rem 2rem;
+  max-width: 78rem;
+  margin: 0 auto;
+}
+
+.workGrid {
+  display: grid;
+  grid-template-columns: 5fr 3fr 4fr;
+  gap: 2.6rem;
+  margin-top: 2.6rem;
+}
+
+.bleed {
+  padding: 4rem 0;
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  background: var(--signal);
+  color: var(--paper);
+}
+
+.bleed p {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0 2rem;
+  font-size: 1.6rem;
+  line-height: 1.28;
+}
+
+.colophon {
+  padding: 2.4rem 2rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.83rem;
+  color: var(--ink-soft);
+}

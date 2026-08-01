@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<!--
+  The twin of half_dark_kit: the same page with the claim finished. Every
+  painted element has its dark: pair and every control has one focus recipe.
+  It is not a *good* design — the rhythm and the grid are as stock as its twin's,
+  and it should score in the same band — but it does not fire the state
+  observations, because there is nothing half-done about it.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cadence — usage</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100">
+
+  <nav class="border-b border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+    <div class="mx-auto max-w-6xl px-5 h-14 flex items-center justify-between">
+      <span class="font-semibold text-gray-900 dark:text-slate-100">Cadence</span>
+      <button class="rounded-md px-3 py-1.5 text-sm text-white dark:text-slate-900 bg-blue-600 dark:bg-blue-400 focus-visible:ring-2 focus-visible:ring-offset-2">Invite</button>
+    </div>
+  </nav>
+
+  <header class="py-14 bg-gray-50 dark:bg-slate-800">
+    <div class="mx-auto max-w-6xl px-5">
+      <h1 class="text-3xl font-bold text-gray-900 dark:text-slate-100">Usage this month</h1>
+      <p class="mt-2 text-gray-600 dark:text-slate-400">Everything metered, nothing rounded up.</p>
+    </div>
+  </header>
+
+  <section class="py-14">
+    <div class="mx-auto max-w-6xl px-5 grid md:grid-cols-3 gap-6">
+      <div class="rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+        <p class="text-sm text-gray-500 dark:text-slate-400">Requests</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-slate-100">1.24M</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+        <p class="text-sm text-gray-500 dark:text-slate-400">Storage</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-slate-100">318 GB</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+        <p class="text-sm text-gray-500 dark:text-slate-400">Seats</p>
+        <p class="text-2xl font-semibold text-gray-900 dark:text-slate-100">41</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-10 bg-gray-50 dark:bg-slate-800">
+    <div class="mx-auto max-w-6xl px-5">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-slate-100 mb-4">Recent invoices</h2>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400">
+            <th class="py-2">Period</th><th class="py-2">Amount</th><th class="py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="border-b border-gray-200 dark:border-slate-700">
+            <td class="py-3 text-gray-900 dark:text-slate-100">June 2026</td>
+            <td class="py-3 text-gray-900 dark:text-slate-100">$412.00</td>
+            <td class="py-3"><a href="#" class="text-blue-600 dark:text-blue-400 focus-visible:ring-2 focus-visible:ring-offset-2">Download</a></td>
+          </tr>
+          <tr class="border-b border-gray-200 dark:border-slate-700">
+            <td class="py-3 text-gray-900 dark:text-slate-100">May 2026</td>
+            <td class="py-3 text-gray-900 dark:text-slate-100">$388.50</td>
+            <td class="py-3"><a href="#" class="text-blue-600 dark:text-blue-400 focus-visible:ring-2 focus-visible:ring-offset-2">Download</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="py-8 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+    <div class="mx-auto max-w-6xl px-5 flex justify-between text-sm text-gray-500 dark:text-slate-400">
+      <span>Cadence Metering Ltd</span>
+      <a href="#" class="text-gray-500 dark:text-slate-400 focus-visible:ring-2 focus-visible:ring-offset-2">Status</a>
+    </div>
+  </footer>
+
+</body>
+</html>

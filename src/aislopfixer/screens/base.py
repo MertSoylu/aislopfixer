@@ -9,6 +9,17 @@ from textual.screen import Screen
 from ..widgets import TooSmall
 
 
+def titled(widget, title: str):
+    """Give a widget its border title while composing, and return it.
+
+    Setting titles from ``on_mount`` means querying for children that may not
+    be mounted yet — a screen's mount handler is not a guarantee that its
+    grandchildren are in the DOM. Doing it here removes the race entirely.
+    """
+    widget.border_title = title
+    return widget
+
+
 class AdaptiveScreen(Screen):
     """A screen that shows a "widen the window" overlay below a minimum size.
 

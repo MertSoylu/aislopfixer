@@ -1,22 +1,19 @@
-"""Per-project persistence under ``<root>/.aislopfixer/``.
+"""Per-project memory under ``<root>/.aislopfixer/``.
 
-A scanned project grows a small ``.aislopfixer`` folder that remembers what the
-user already dealt with, so re-running the tool does not nag about the same
-things twice:
+Small on purpose. The old store existed to suppress individual findings the
+user had already dealt with; a design report has nothing to suppress — it is a
+measurement, and hiding part of a measurement makes the number wrong. What is
+worth remembering instead is what the *user decided*:
 
-* ``allowlist.json`` — signatures the user marked "not slop" (see
-  :mod:`aislopfixer.allowlist`).
-* ``ledger.json`` — every finding the user resolved (fixed / annotated / ignored)
-  or skipped, with its signature, location, status and timestamp.
-* ``report.md`` — a human-readable snapshot of the latest scan and what happened
-  to each finding.
+* ``state.json`` — which archetype this project settled on, which observations
+  the user has said they are living with, and the score history so a run can be
+  compared with the last one.
+* ``report.md`` — a readable snapshot, so the numbers can be diffed across
+  commits without opening the TUI.
 
-On the next scan, :meth:`Store.filter` drops anything in the allowlist *and*
-anything the ledger records as already resolved. Skipped findings are recorded
-for the report but intentionally re-surface — "skip" means "later", not "never".
-
-The folder is hidden (dot-prefixed), so the scanner's own walk skips it and the
-report/ledger are never themselves scanned.
+The system stylesheet the transformer emits lives in the same folder, which is
+also why the folder is dot-prefixed: the scanner's walk skips it, so the tool
+never measures its own output.
 """
 
 from __future__ import annotations
@@ -25,214 +22,170 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from .allowlist import Allowlist
-from .engine.models import Category, Finding, Status
-from .engine.scoring import project_score_from_findings
+from .design.models import Axis, DesignReport
 
 DIRNAME = ".aislopfixer"
-LEDGER = "ledger.json"
+STATE = "state.json"
 REPORT = "report.md"
-
-# Statuses whose findings must NOT come back on the next scan. FIXED is
-# deliberately absent: a fix removes the text from that spot, so a later match
-# of the same signature is a different occurrence (or a revert) that deserves
-# a fresh report. ANNOTATED text stays in the file and IGNORED is the user's
-# call — both suppress.
-_SUPPRESS = {Status.ANNOTATED.value, Status.IGNORED.value}
-
-# A rule dismissed this many times in a project is treated as noisy there.
-NOISY_THRESHOLD = 3
-# How much to scale a noisy rule's confidence on later scans (de-prioritize).
-NOISY_DEMOTION = 0.5
-
-_STATUS_ICON = {
-    Status.FIXED.value: "✓",
-    Status.ANNOTATED.value: "✎",
-    Status.IGNORED.value: "⊘",
-    Status.SKIPPED.value: "→",
-    Status.OPEN.value: "▲",
-}
-
-
-def _now() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+_HISTORY_KEEP = 40
 
 
 class Store:
-    """Owns the project's ``.aislopfixer`` folder: allowlist, ledger and report."""
+    """Reads and writes one project's ``.aislopfixer`` folder."""
 
     def __init__(self, root: str) -> None:
         self.root = Path(root)
         self.dir = self.root / DIRNAME
-        self.allowlist = Allowlist(root)
-        self._ledger: dict[tuple[str, str, str, int], dict] = {}
-        self._load_ledger()
+        self._state: dict = {}
+        self._load()
 
-    # ------------------------------------------------------------------- ledger
-    def _load_ledger(self) -> None:
+    # ------------------------------------------------------------------ state
+    def _load(self) -> None:
         try:
-            data = json.loads((self.dir / LEDGER).read_text(encoding="utf-8"))
+            loaded = json.loads((self.dir / STATE).read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return
-        for e in data.get("entries", []):
-            key = (e.get("rule_id", ""), e.get("value", ""),
-                   e.get("file", ""), e.get("line", 0))
-            self._ledger[key] = e
+            loaded = {}
+        self._state = loaded if isinstance(loaded, dict) else {}
 
-    def _save_ledger(self) -> None:
-        data = {"version": 1, "entries": list(self._ledger.values())}
+    def _save(self) -> None:
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
-            (self.dir / LEDGER).write_text(
-                json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
+            (self.dir / STATE).write_text(
+                json.dumps(self._state, indent=2, ensure_ascii=False),
+                encoding="utf-8", newline="\n",
             )
         except OSError:
             pass
 
-    def record(self, f: Finding, *, flush: bool = True) -> None:
-        """Persist how a finding was handled (its status drives suppression).
+    @property
+    def archetype(self) -> str | None:
+        value = self._state.get("archetype")
+        return value if isinstance(value, str) else None
 
-        Pass ``flush=False`` inside a bulk loop to skip the per-item disk write,
-        then call :meth:`flush` once at the end.
+    def set_archetype(self, key: str) -> None:
+        self._state["archetype"] = key
+        self._save()
+
+    @property
+    def applied_axes(self) -> set[str]:
+        """Axis ids this project has already had the transform applied for.
+
+        Remembered so a second run opens on the work that is left rather than
+        on everything again: the usual first step is "take the colours, leave
+        the layout alone", and the usual second step is the rest of it.
         """
-        key = (f.rule_id, f.matched_text, f.file, f.line)
-        self._ledger[key] = {
-            "rule_id": f.rule_id,
-            "value": f.matched_text,
-            "file": f.file,
-            "line": f.line,
-            "category": f.category.value,
-            "message": f.message,
-            "status": f.status.value,
-            "updated": _now(),
-        }
-        if flush:
-            self._save_ledger()
+        value = self._state.get("applied_axes", [])
+        return {v for v in value if isinstance(v, str)} if isinstance(value, list) else set()
 
-    def flush(self) -> None:
-        """Write the ledger to disk (use after batched ``record(flush=False)``)."""
-        self._save_ledger()
+    def add_applied_axes(self, axes) -> None:
+        self._state["applied_axes"] = sorted(self.applied_axes | set(axes))
+        self._save()
 
-    def _suppressed(self) -> set[tuple[str, str, str]]:
-        return {
-            (e["rule_id"], e["value"], e["file"])
-            for e in self._ledger.values()
-            if e.get("status") in _SUPPRESS
-        }
+    def clear_applied_axes(self) -> None:
+        """After an undo there is nothing applied to resume from."""
+        self._state["applied_axes"] = []
+        self._save()
 
-    # ----------------------------------------------------------------- adaptive
-    def ignored_count(self, rule_id: str) -> int:
-        """How many distinct findings of ``rule_id`` the user marked not-slop."""
-        return sum(
-            1 for e in self._ledger.values()
-            if e.get("rule_id") == rule_id and e.get("status") == Status.IGNORED.value
-        )
+    @property
+    def accepted(self) -> set[str]:
+        """Observation keys the user has chosen to live with."""
+        value = self._state.get("accepted", [])
+        return set(value) if isinstance(value, list) else set()
 
-    def noisy_rules(self, threshold: int = NOISY_THRESHOLD) -> set[str]:
-        """Rules dismissed as not-slop ≥ ``threshold`` times in this project.
+    def toggle_accepted(self, key: str) -> bool:
+        """Flip one observation's accepted flag; returns the new state."""
+        acc = self.accepted
+        now = key not in acc
+        acc.add(key) if now else acc.discard(key)
+        self._state["accepted"] = sorted(acc)
+        self._save()
+        return now
 
-        The tool learns from the user: a rule they keep rejecting is noisy *here*,
-        so its findings are de-prioritized on later scans (see scanner demotion).
-        """
-        counts: dict[str, int] = {}
-        for e in self._ledger.values():
-            if e.get("status") == Status.IGNORED.value:
-                rid = e.get("rule_id", "")
-                counts[rid] = counts.get(rid, 0) + 1
-        return {rid for rid, c in counts.items() if c >= threshold}
+    def record_run(self, report: DesignReport, applied: int = 0) -> None:
+        """Append this run's headline numbers to the history."""
+        history = self.history
+        history.append({
+            "at": datetime.now().isoformat(timespec="seconds"),
+            "decisions": report.decision_density,
+            "repetition": report.repetition,
+            "template": report.template_score,
+            "edits": applied,
+        })
+        self._state["history"] = history[-_HISTORY_KEEP:]
+        self._save()
 
-    # -------------------------------------------------------------------- query
-    def filter(self, findings: list[Finding]) -> list[Finding]:
-        """Drop findings the user vetted (allowlist) or already resolved (ledger)."""
-        sigs = self._suppressed()
-        kept = self.allowlist.filter(findings)
-        return [f for f in kept if (f.rule_id, f.matched_text, f.file) not in sigs]
+    @property
+    def history(self) -> list[dict]:
+        value = self._state.get("history", [])
+        return list(value) if isinstance(value, list) else []
 
-    # ------------------------------------------------------------------- report
-    def write_report(self, findings: list[Finding], target: str | None = None) -> None:
-        """Write a human-readable ``report.md`` snapshot of the scan + outcomes."""
+    @property
+    def previous(self) -> dict | None:
+        """The last recorded run, for a before/after line in the report."""
+        history = self.history
+        return history[-1] if history else None
+
+    # ----------------------------------------------------------------- report
+    def write_report(self, report: DesignReport, system=None) -> str | None:
+        """Write ``report.md``; returns the path, or ``None`` on failure."""
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
-            (self.dir / REPORT).write_text(
-                self._render_report(findings, target), encoding="utf-8"
-            )
+            path = self.dir / REPORT
+            path.write_text(render_report(report, system), encoding="utf-8",
+                            newline="\n")
+            return str(path)
         except OSError:
-            pass
+            return None
 
-    def _render_report(self, findings: list[Finding], target: str | None) -> str:
-        n = len(findings)
-        fixed = [f for f in findings if f.status in (Status.FIXED, Status.ANNOTATED)]
-        ignored = [f for f in findings if f.status is Status.IGNORED]
-        skipped = [f for f in findings if f.status is Status.SKIPPED]
-        remaining = [f for f in findings if f.status is Status.OPEN]
 
-        lines: list[str] = []
-        lines.append("# AI Slop Fixer — Report")
-        lines.append("")
-        if target:
-            lines.append(f"- **Target:** `{target}`")
-        lines.append(f"- **Last scan:** {_now()}")
-        # Score what is still *live* (open/skipped) — a report that keeps the
-        # scan-time score after fixes claims the work changed nothing. The
-        # scan-time number stays visible as the "was" reference.
-        live = [f for f in findings if f.status in (Status.OPEN, Status.SKIPPED)]
-        now_score = round(project_score_from_findings(live) * 100)
-        was_score = round(project_score_from_findings(findings) * 100)
-        score_line = f"- **Slop score:** {now_score}/100"
-        if was_score != now_score:
-            score_line += f"  _(was {was_score}/100 at scan time)_"
-        lines.append(score_line)
+def render_report(report: DesignReport, system=None) -> str:
+    """The markdown snapshot written after each run."""
+    lines = [
+        "# Tasarım raporu",
+        "",
+        f"_{datetime.now().strftime('%Y-%m-%d %H:%M')} · {report.root}_",
+        "",
+        f"**Şablon skoru: {report.template_score:.0f}/100** — {report.verdict}",
+        "",
+        f"- Karar yoğunluğu: **{report.decision_density:.0f}**/100",
+        f"- Tekrar: **{report.repetition:.0f}**/100",
+        f"- {report.files_scanned} dosya · {report.elements} eleman",
+        "",
+        "## Eksenler",
+        "",
+        "| Eksen | Karar | Tekrar | Varsayılan | Hüküm |",
+        "|---|---:|---:|---:|---|",
+    ]
+    for axis in Axis:
+        score = report.axes.get(axis)
+        if score is None or not score.measured:
+            lines.append(f"| {axis.label} | — | — | — | kullanılmıyor |")
+            continue
         lines.append(
-            f"- **Found:** {n}  ·  **Resolved:** {len(fixed)}  ·  "
-            f"**Not slop:** {len(ignored)}  ·  **Skipped:** {len(skipped)}  ·  "
-            f"**Remaining:** {len(remaining)}"
+            f"| {axis.label} | {score.decision_score:.0f} | "
+            f"{score.repetition:.0f} | %{score.default_share * 100:.0f} | "
+            f"{score.verdict} |"
         )
-        lines.append("")
 
-        lines.append("## By category")
-        lines.append("")
-        lines.append("| Category | Found | Resolved |")
-        lines.append("|---|---|---|")
-        for cat in Category:
-            cf = [f for f in findings if f.category is cat]
-            if not cf:
-                continue
-            cr = sum(
-                1 for f in cf
-                if f.status in (Status.FIXED, Status.ANNOTATED, Status.IGNORED)
-            )
-            lines.append(f"| {cat.value} | {len(cf)} | {cr} |")
-        lines.append("")
+    if system is not None:
+        lines += ["", "## Türetilen sistem", ""]
+        lines += [f"- **{label}:** {value}" for label, value in system.summary()]
 
-        resolved = fixed + ignored
-        if resolved:
-            lines.append("## Resolved")
+    lines += ["", "## Gözlemler", ""]
+    if not report.observations:
+        lines.append("_Yok._")
+    for obs in report.observations:
+        lines += [
+            f"### {obs.title}  ·  `{obs.id}`  ·  {obs.stat}",
+            "",
+            obs.detail,
+            "",
+        ]
+        if obs.evidence:
+            lines.append("Kanıt:")
+            lines += [f"- `{e.file}:{e.line}` — {e.snippet[:110]}"
+                      for e in obs.evidence[:6]]
             lines.append("")
-            for f in resolved:
-                lines.append(self._report_line(f))
-            lines.append("")
-
-        if remaining:
-            lines.append("## Remaining")
-            lines.append("")
-            for f in remaining:
-                lines.append(self._report_line(f))
-            lines.append("")
-
-        if n == 0:
-            lines.append("No issues found. This project is clean. ✓")
-            lines.append("")
-
-        lines.append("---")
-        lines.append("_Resolved and not-slop items above are remembered; re-running "
-                     "the scan will not report them again._")
-        lines.append("")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _report_line(f: Finding) -> str:
-        icon = _STATUS_ICON.get(f.status.value, "•")
-        token = f.matched_text.strip()
-        token = f" — `{token}`" if token else ""
-        return f"- {icon} `{f.file}:{f.line}` — {f.rule_id} — {f.message}{token}"
+        if obs.prescription:
+            lines += [f"**Yapılacak:** {obs.prescription}", ""]
+    return "\n".join(lines) + "\n"

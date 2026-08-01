@@ -1,0 +1,83 @@
+/* Kern & Sons — the tokens the pages read from. A cool, high-contrast system
+   with a two-step surface treatment and a rhythm that changes by role. Nothing
+   here is a framework default; that is the whole point of the case. */
+
+:root {
+  --color-paper:      #0e1116;
+  --color-shell:      #161b22;
+  --color-ink:        #eef2f6;
+  --color-ink-muted:  #9aa7b4;
+  --color-ink-faint:  #64707c;
+  --color-rule:       #232a33;
+  --color-signal:     #7fd1ae;
+  --color-mark:       #d8a657;
+
+  /* 1.22 ratio from an 18px body. */
+  --text-body:        1.125rem;
+  --text-lead:        1.375rem;
+  --text-title:       1.6875rem;
+  --text-section:     2.375rem;
+  --text-display:     3.75rem;
+
+  --leading-display:  0.92;
+  --leading-title:    1.18;
+  --leading-body:     1.65;
+  --tracking-display: -0.03em;
+  --tracking-caps:    0.18em;
+
+  --band-open:        9rem;
+  --band-catalogue:   5.5rem;
+  --band-dense:       3.25rem;
+  --band-close:       2rem;
+
+  --measure-read:     52ch;
+  --measure-content:  78rem;
+  --measure-narrow:   58rem;
+
+  --radius-panel:     0;
+  --radius-control:   3px;
+
+  --shadow-lift:      0 1px 0 var(--color-rule);
+  --shadow-float:     0 24px 48px -24px rgb(0 0 0 / 0.7);
+
+  --ease-enter:       cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-tint:         120ms;
+  --dur-move:         340ms;
+}
+
+body {
+  font-family: "Untitled Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--color-ink);
+  background-color: var(--color-paper);
+  text-wrap: pretty;
+}
+
+.font-display {
+  font-family: "Lyon Text", Georgia, serif;
+  text-wrap: balance;
+}
+
+.caps {
+  font-size: 0.75rem;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+.rule-top {
+  border-top: 1px solid var(--color-rule);
+  padding-top: 1.25rem;
+}
+
+.control {
+  border-radius: var(--radius-control);
+  transition-property: color, border-color;
+  transition-duration: var(--dur-tint);
+  transition-timing-function: var(--ease-enter);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control { transition-duration: 1ms; }
+}

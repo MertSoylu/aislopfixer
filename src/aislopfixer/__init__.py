@@ -1,3 +1,3 @@
-"""aislopfixer — terminal TUI that finds and fixes AI-generated slop in web projects."""
+"""aislopfixer — measure how templated a web project's design is, and fix it."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"

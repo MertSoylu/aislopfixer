@@ -1,217 +1,243 @@
 # aislopfixer
 
-> Find and fix **AI-generated slop** in web projects — hallucinated dependencies, security holes, swallowed errors, leftover chat residue and LLM marketing prose. Terminal UI + CI mode. Fully offline, rule-based, no API keys.
+> Ölçer: bir web projesinin tasarımı **ne kadar şablon**? Düzeltir: projeye özgü bir tasarım sistemi türetip kodu ona taşır. Terminal arayüzü, tamamen çevrimdışı, API anahtarı yok.
 
 [![npm](https://img.shields.io/npm/v/@mertsoylu/aislopfixer.svg)](https://www.npmjs.com/package/@mertsoylu/aislopfixer)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Current version: 0.6.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer)
-
-AI-generated code ships with a recognizable class of defects — and they are not the old "As an AI language model…" giveaways. Today's models hallucinate package imports that break your build (and invite [slopsquatting](https://en.wikipedia.org/wiki/Slopsquatting) attacks), wrap everything in `try/catch` and silently swallow the error, store JWTs in `localStorage`, build SQL with template literals, leave `// ... rest of the code ...` elision markers behind, and coat every landing page in "It's not just a tool — it's a game changer" prose.
-
-**aislopfixer** scans your project for exactly this class of mistakes, ranks each finding by confidence, and lets you fix them one keystroke at a time — or gate your CI on them.
-
-Everything runs **locally**. No network calls, no LLM, no telemetry. Deterministic rules you can read.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/3-results.svg" alt="aislopfixer results view" width="800">
-</p>
+**Güncel sürüm: 0.7.0** — [npm](https://www.npmjs.com/package/@mertsoylu/aislopfixer)
 
 ---
 
-## Install
+## Sorun
+
+AI slop artık yazım hatası değil. Bugünün modelleri temiz, erişilebilir, semantik kod yazıyor. Yine de çıktının hepsi birbirine benziyor. Şuna bakın:
+
+```html
+<section class="py-20 bg-white">
+  <div class="max-w-7xl mx-auto px-4 text-center">
+    <h2 class="text-4xl font-bold text-gray-900 mb-4">Features</h2>
+    <p class="text-lg text-gray-600 mb-12">Everything you need</p>
+    <div class="grid md:grid-cols-3 gap-8">
+      <div class="rounded-2xl border p-6 shadow-sm">…</div>
+```
+
+Bu blokta yasak bir kelime yok. Tek bir hata yok. Ve tamamen slop — çünkü:
+
+- `py-20` sayfadaki dokuz bölümün dokuzunda da var: **ritim yok, tek değer var**
+- `max-w-7xl mx-auto px-4` her yerde: **tek container kararı**
+- `text-center` her bölüm başlığında: **hizalama monokültürü**
+- `grid-cols-3` üç ayrı yerde: **simetri monokültürü**
+- Dört yazı boyutu, hepsi Tailwind varsayılan rampasından: **tipografi kararı sıfır**
+- `rounded-2xl border shadow-sm` her kartta: **tek malzeme dili**
+
+Yani slop **tekil token'da değil, token dağılımında**. Regex tabanlı bir linter bunu göremez, çünkü tek tek her sınıf meşru.
+
+## Ölçü
+
+**Bu projede kaç tane bağımsız tasarım kararı var?**
+
+İnsan tasarımı bir landing page'de 30–50 karar bulunur. Üretilmiş çıktıda 4–8. Bu ölçülebilir, deterministik ve çevrimdışı.
+
+Araç iki eksen ölçer:
+
+| Eksen | Ne | Üretilmiş sayfa | Tasarlanmış sayfa |
+|---|---|---:|---:|
+| **Karar yoğunluğu** | Kaç bağımsız, varsayılan-dışı karar var | 10–30 | 60–100 |
+| **Tekrar** | Sayfanın ne kadarı kendisinin kopyası | 80–95 | 20–55 |
+
+**Şablon skoru** bu ikisinden çıkar. Kritik ayrım: *tutarlılık slop değildir*. Yüksek tekrar + yüksek karar = iyi bir tasarım sistemi, araç susar. Yüksek tekrar + düşük karar = şablon.
+
+Değerin nereden geldiği kararı belirler:
+
+| Kaynak | Örnek | Ağırlık |
+|---|---|---:|
+| Framework varsayılanı | `py-20`, `text-xl`, `bg-gray-100` | 0.25 |
+| Yazılmış değer | `text-[2.75rem]`, `py-[68px]` | 1.0 |
+| Proje tokenı | `bg-surface`, `rounded-panel` | 1.5 |
+
+Ayrıca *yapısal* kararlar da sayılır — değeri varsayılan olsa bile: role göre değişen bant ritmi, asimetrik ızgara, container'dan taşan bir bant, hizalama çeşitliliği.
+
+Sayı değil **oran** ölçülür: bir eksende kaç farklı değer varsa, hedef odur. Daha çok varsayılan kullanmak skoru yükseltmez, ve on kademeli bir renk rampası on karar değil **bir** karardır. Bu yüzden 40 elemanlık bir sayfa ile 10 000 elemanlık bir depo aynı ölçekte okunur.
+
+Ölçüm sekiz eksende yapılır: **Tipografi · Renk · Boşluk/Ritim · Biçim · Yerleşim · Malzeme · Hareket · Kopya**. Projenin hiç kullanmadığı bir eksen sıfır sayılmaz, hesaba katılmaz — gölgesi ve animasyonu olmayan bir sayfa o eksenlerde başarısız olmamıştır, o eksenleri kullanmamayı seçmiştir.
+
+### Kalibrasyon
+
+`bench/cases/` içindeki etiketli korpus, her vakanın düşmesi gereken bandı taşır. `python -m bench.run`:
+
+```
+case                şablon  karar  tekrar  band          durum
+----------------------------------------------------------------
+slop_saas             88.6   18.9    87.8   70–100      ok
+slop_tr               88.0   21.6    93.2   70–100      ok
+slop_kit              75.9   28.5    76.3   70–100      ok
+mid_human_tailwind    46.9   36.8    35.6   18–50       ok
+crafted_kit           33.0   63.7    55.4   25–60       ok
+clean_studio_large    12.4   85.8    39.9    0–20       ok
+
+ayrım payı: 29.0 puan
+```
+
+`mid_human_tailwind` korpusun en zor vakası: elle yazılmış, sadece Tailwind varsayılanlarını kullanan dürüst bir sayfa. Onu şablondan ayıramayan bir ölçüm, tasarımı değil Tailwind'i ölçüyor demektir.
+
+`crafted_kit` başka bir ayrımı sabitler: bir tasarım evinin yaptığı, satılan landing şablonu. Ayarlanmış tip rampası ve elle yazılmış easing eğrileri var, ama paleti kutudan çıkma. “Herkesin sayfası olacak” ile “kimse karar vermemiş” aynı iddia değil ve araç yalnızca ikincisini ölçer — o yüzden bu vaka ortada durur.
+
+İkiz kuralı korpusun omurgası: `slop_saas` / `slop_react` / `slop_vue` / `slop_styled` aynı tasarımın dört yığındaki hâli, `clean_utility` / `clean_css` ise aynı temiz sayfanın utility ve ham CSS hâli. Aralarındaki fark 5 puanı geçerse araç tasarımı değil lehçeyi ölçüyordur.
+
+Korpus kapalı bir devre — vakaları biz yazdık. Açık devre `bench/field.md`: on beş gerçek depo klonlanır, taranır, ve **hangi satırın yanlış tarafa düştüğü tabloda kalır**. `--transform` ile aynı tablo dönüşümün çıktısını da ölçer: önce/sonra skor, ve “yalnızca sınıf listeleri değişti” invaryantının bayt düzeyinde doğrulanması. `bench/impact.md` ise aracın `a`'ya basılmadan önce gösterdiği tahmini gerçekleşenle karşılaştırır — o tahmin bir model değil, dönüşümün bellekte çalıştırılmış hâlidir, ve on yedi vakada da fark sıfırdır. Hiçbiri bir kapı değil.
+
+---
+
+## Kurulum
 
 ```bash
 npm install -g @mertsoylu/aislopfixer
-aislopfixer ./path/to/project
+aislopfixer ./projem
 ```
 
-Requires **Python ≥ 3.11** on your machine. On first run the npm launcher builds a small isolated Python environment under `~/.aislopfixer/` (needs internet once), then starts instantly thereafter.
+Makinede **Python ≥ 3.11** olmalı. İlk çalıştırmada npm başlatıcısı `~/.aislopfixer/` altında yalıtılmış bir Python ortamı kurar (bir kez internet gerekir), sonrasında anında açılır.
 
-## What it detects
-
-Only mistakes that **current-generation models still make** — trivial lint is deliberately out of scope.
-
-| Category | What | Why it matters |
-|----------|------|----------------|
-| 🧨 **Hallucinated imports** | `import x from 'pkg'` where `pkg` is in no `package.json` on the path to the root (monorepo-aware; Node built-ins, tsconfig `paths`, `@/`-style aliases all respected); named imports the target module demonstrably never exports; unused leftover imports | Build breaks; typo-squatted registry names are a supply-chain attack vector |
-| 🔓 **Security** | XSS sinks (`innerHTML`, `dangerouslySetInnerHTML`, `v-html`), SQL built by interpolation/concat, command injection, `eval`, disabled TLS validation, wildcard CORS, weak crypto, `Math.random()` secrets, hardcoded real keys (AWS/GitHub/OpenAI/Stripe/…, JWTs, PEM blocks, high-entropy literals), tokens in `localStorage`, `postMessage(…, '*')` | Roughly half of generated snippets carry a known weakness; these are the concrete, offline-detectable shapes |
-| 🕳️ **Swallowed errors** | `catch (e) {}` and `.catch(() => {})` — a body holding only a comment (`catch { /* quota errors are fine */ }`) is treated as a documented decision and left alone; log-only catches (`catch (e) { console.error(e) }`); catches that silently `return null`/`[]`/`{}` | The try/catch-everything habit makes failures vanish silently |
-| ✂️ **Broken pastes** | Elision markers (`// ... existing code ...`), not-implemented stubs, `debugger;`, leftover ``` fences from chat, unresolved merge conflict markers | The file is literally incomplete or unparseable |
-| 🔑 **Placeholder secrets** | `YOUR_API_KEY_HERE`, `sk-xxxx…`, `password: "changeme"` | Fails at runtime and normalizes hardcoding credentials |
-| 🗑️ **Placeholders / dummy data** | lorem ipsum, `[Your Company Name]`, `example.com`, fake API endpoints (`api.yourdomain.com`), 555-phones, `href="#"`, placeholder images | Ships as-is embarrassingly often |
-| 💬 **AI chat residue** | "As an AI language model…", "Certainly! Here is…", "I hope this helps" | Copy-pasted chat answers in production copy |
-| 📢 **LLM prose tells** | "It's not just X — it's Y", "Whether you're … or …", "delve", "seamlessly", em-dash overuse, buzzword density, emoji-headed README sections, checkmark feature lists | The house style of machine marketing copy |
-| 🗣️ **Template marketing copy** | Interchangeable SaaS microcopy ("No credit card required" + "Cancel anytime" + "Everything you need to…" — fires only when ≥2 co-occur), fabricated-testimonial phrasing ("completely transformed the way we work", "game-changer for our team") | Copy that could sit on any product's page — no product specificity |
-| 🎨 **AI slop design** | The stock purple→pink hero gradient (Tailwind and raw CSS), gradient-clipped hero text, glassmorphism, decorative glow blobs (`rounded-full` + `blur-3xl`), invented social proof ("Trusted by 10,000+ developers"), fake stat strips ("99.9% uptime · 24/7 support · 10k+ users"), fabricated big-brand logo clouds, the stock pricing triad ("Most Popular" + per-month + Enterprise), placeholder avatar hosts, emoji-decorated UI copy, `<!-- Hero Section -->`-style scaffold recipes, and a composite "landing kit" score across 13 signal families | The instantly recognizable AI landing-page dialect — flagged on combined signals, so one intentional gradient stays quiet |
-| 🖼️ **Image accessibility** | Missing or generic (`alt="image"`) alt text | The one a11y mistake generators still make |
-| 📋 **Cross-file duplicates** | The same (or lightly reworded) marketing paragraph pasted across pages; the same helper function re-emitted into several files instead of imported once | Word/token-shingle Jaccard clustering |
-| 💤 **Over-commenting** | Files where every other line is a `//` narration comment (directives like `eslint-disable` excluded) | The step-by-step-narrator habit of generated code |
-
-Context-aware by construction: `eval(` inside a string or comment is not flagged, buzzwords only count in human-visible prose (never identifiers), `[id]`/`[a-z]`/`[...slug]` framework tokens are never "placeholders".
-
-## Use it interactively (TUI)
+## Kullanım
 
 ```bash
 aislopfixer ./my-site
+aislopfixer ./monorepo --pages "app/(marketing)"
 ```
 
-### 1 · Point it at a project
+`--pages`, bir depo içindeki **tek bir siteyi** ölçmek içindir. Ağacın tamamı yine okunur — bileşenler nerede dururlarsa dursunlar çözülür — süzülen şey ölçümün neyi anlattığıdır: verilen yolun altındaki sayfalar ve onların kullandığı bileşenler. `.aislopfixer.toml` içindeki `pages = ["app/(marketing)"]` ile aynı iş.
 
-Confirm the target folder (pre-filled from the command line), watch the scan run:
+### 1 · Rapor ekranı
 
-| Splash | Scan |
-|--------|------|
-| ![splash](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/1-splash.svg) | ![scan](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/2-scan.svg) |
+Manşette şablon skoru ve iki eksen. Solda sekiz eksenin karar/tekrar ölçerleri, altında ölçülen gözlemler; sağda seçili gözlemin ayrıntısı — ne ölçüldü, kaynakta nerede (`dosya:satır` ve kod satırı), ve yerine ne yapılmalı.
 
-### 2 · Triage the findings
+| Tuş | |
+|---|---|
+| `↑` `↓` | gözlemler arasında gez |
+| `a` | gözlemi kabul et (raporda kalır, reçeteye girmez) |
+| `x` | agent reçetesi yaz (`.aislopfixer/brief.md` ve pano) |
+| `s` | sistem ekranı |
+| `r` / `n` / `q` | yeniden tara / başka klasör / özet |
 
-![results — findings tree, confidence meters, source excerpt and fix preview](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/3-results.svg)
+### 2 · Sistem ekranı
 
-Left: findings grouped by **category → file**, each file with a mini slop bar, each finding with its severity and fix-type icon. Right: the selected finding in full — confidence meter, the offending source lines with the match highlighted, and a preview of exactly what a fix would change. Handle each finding with one key (`?` shows this list in-app):
+Araç projeye özgü bir tasarım sistemi türetir ve kodun ona göre nasıl değişeceğini **uygulamadan önce** diff olarak gösterir.
 
-| Key | Action |
-|-----|--------|
-| `f` | fix selected finding (auto, or prompts you for the value) |
-| `d` | preview the exact diff the fix would make |
-| `p` | fix **all** safe automatic findings at once |
-| `a` | annotate in source |
-| `s` | skip (re-surfaces next scan) — on a category/file row: skip the whole branch |
-| `i` | not slop — remembered forever — on a category/file row: the whole branch |
-| `u` | undo the last fix/annotate (restores the file) |
-| `x` | export — fix brief / JSON / SARIF |
-| `1 2 3` / `0` | filter by severity / clear |
-| `c` | cycle the confidence floor (all → 45 → 60 → 75%) |
-| `h` | hide already-handled findings |
-| `q` | summary |
+| Tuş | |
+|---|---|
+| `s` | arketipi değiştir (sistem ve diff anında yeniden hesaplanır) |
+| `d` | diff ile değişiklik listesi arasında geçiş |
+| `a` | uygula |
+| `u` | geri al |
+| `1`–`5` / `0` | dönüşümü eksene göre süz (renk · tip · ritim · yerleşim · malzeme) |
 
-Three fix types: **auto** deletes/replaces outright (chat residue, lorem ipsum, `debugger;`) — every touched file is backed up to `<file>.aislopfixer.bak` first; **prompt** asks you for the real value (URLs, emails, alt text) and inserts it; **manual** (security, hallucinated imports) is a judgement call — annotate, fix by hand, or export it (next step).
+`a`'nın üstünde duran sayı bir tahmin değil: dönüşüm bellekte çalıştırılıp aynı boru hattıyla yeniden ölçülür. Zaten bir sistemi olan bir projede araçınki daha dardır ve skor **yükselir** — o durumda `a` kapalı sunulur, yazmak için iki kez basmak gerekir.
 
-### 3 · Hand what's left to your AI assistant
+---
 
-![export picker — fix brief, JSON or SARIF](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/5-export.svg)
+## Türetilen sistem
 
-Half the findings need judgement — exactly what a coding agent is good at once it's told *precisely* what's wrong and where. `x` opens the export picker:
+Bir varsayılanı başka bir varsayılanla değiştirmek işe yaramaz. Bu yüzden altı elle yazılmış **arketip** var; her biri tip, ritim, kenar, derinlik ve hizalama konusunda diğerlerinden farklı bir pozisyon alıyor:
 
-- **`b` fix brief** (`fix-prompt.md`, also copied to the clipboard) — every open finding with exact location, source excerpt, per-rule fix guidance, and guardrails so the agent fixes only what was found without introducing new slop. Paste it into Claude Code, Cursor or Copilot; the brief ends by telling the agent to verify with `aislopfixer --check`. The detector stays deterministic — the AI only executes a vetted work order.
-- **`j` JSON** (`findings.json`) / **`s` SARIF** (`findings.sarif`) — the same machine-readable output as `--json` / `--sarif`.
+**Editorial** · **Swiss** · **Terminal** · **Warm Craft** · **High Contrast** · **Archive**
 
-Everything lands in `.aislopfixer/`, which is never itself scanned.
+Proje kimliğinden (klasör ve paket adı, CRC32) türetilen tohum arketipi ve hue'yu seçer — yani **aynı proje her zaman aynı sistemi alır**, farklı projeler farklı sistem alır. Projenin kendi markalı rengi varsa (yazılmış bir hex, hazır paletten bir shade değil) o hue korunur; yalnızca etrafındaki sistem yeniden kurulur.
 
-### 4 · Summary
+Sistem `.aislopfixer/system.css` olarak yazılır — hem `@theme` (Tailwind v4) hem `:root` (düz CSS veya v3) bloğuyla, ikisi de aynı değerlerle:
 
-![summary — slop score, per-category bars, next steps](https://raw.githubusercontent.com/MertSoylu/aislopfixer/main/shots/4-summary.svg)
-
-Slop score, severity breakdown, animated per-category fixed/found bars — plus where the report went and what to do next (`b` back · `r` rescan · `n` new folder · `q` quit).
-
-### It learns your project
-
-Everything you resolve or dismiss is remembered in `<project>/.aislopfixer/`:
-
-- **allowlist** — "not slop" verdicts, keyed by content so they survive edits and apply across files;
-- **ledger** — annotated/dismissed findings never come back (fixed spots stay quiet naturally: the text is gone, and a re-match is a new occurrence); skipped ones intentionally do;
-- **noise demotion** — a rule you dismiss 3+ times gets its confidence halved in that project;
-- **report.md** — human-readable snapshot after each scan.
-
-## Use it in CI / pre-commit
-
-```bash
-aislopfixer . --check                    # print findings, exit 1 if any warning+
-aislopfixer . --check --fail-on risky    # gate on application problems only ← recommended
-aislopfixer . --check --fail-on broken   # only code that doesn't work gates the build
-aislopfixer . --json                     # machine-readable output
-aislopfixer . --sarif > slop.sarif       # SARIF 2.1.0 for GitHub code scanning
-aislopfixer . --fix                      # apply safe auto-fixes, then report the rest
-aislopfixer . --check --min-confidence 0.8
-aislopfixer . --fix --prompt > fix-brief.md   # auto-fix the safe ones, brief your AI on the rest
+```css
+@theme {
+  --color-paper: #fdf7ef;      --color-ink: #21180d;
+  --color-ink-muted: #5e554b;  --color-rule: #e0d7cd;
+  --color-accent: #b74124;     --color-on-accent: #fdf7ef;
+  --font-display: "Signifier", Georgia, serif;
+  --text-display: 3.227rem;    --leading-display: 0.98;
+  --tracking-display: -0.032em;
+  --spacing-band-open: 7.5rem; --spacing-band-dense: 3.5rem;
+  --container-read: 46ch;      --container-content: 74rem;
+  --radius-panel: 2px;         --radius-control: 6px;
+}
 ```
 
-`--fail-on` takes either axis. **Impact** — `risky` (any application problem) or `broken` (only code that does not work) — is what you usually want in CI: it gates on the same split the TUI and the fix brief lead on, so a page whose only sin is the word "seamless" never turns the build red. **Severity** — `info`/`warning`/`error` — still works, and `never` always exits 0.
+Paletler HSL doygunluğu yerine **sabit kroma** ile üretilir: doygunluk, açıklık uçlara yaklaştıkça anlamını yitirir, bu yüzden kroma belirtip doygunluğu çözmek tonun sayfa zemininden mürekkebe kadar görünür kalmasını sağlar. Her arketipin `ink/paper`, `ink-muted/paper` ve `on-accent/accent` çiftlerinin WCAG eşiklerini geçtiği test edilir.
 
-Exit codes: `0` clean, `1` something tripped `--fail-on` (default `warning`), `2` usage error. The project's `.aislopfixer` memory applies in CI too — vetted false positives stay silent (disable with `--no-store`).
+## Dönüşüm
 
-GitHub Actions — one step, PR annotations included via code scanning:
+**Sert kural: yalnızca sınıf listeleri değişir, DOM ağacına asla dokunulmaz.** Bu yüzden çıktı her zaman derlenir; en kötü ihtimalle sayfa yanlış görünür, build kırılmaz.
 
-```yaml
-- uses: mertsoylu/aislopfixer@main
-  with:
-    path: .
-    fail-on: error
-    sarif-file: slop.sarif        # optional
-- uses: github/codeql-action/upload-sarif@v3   # optional, annotates the PR
-  if: always()
-  with: { sarif_file: slop.sarif }
+```diff
+- <section class="py-20 bg-white">
+-   <div class="max-w-7xl mx-auto px-4 text-center">
+-     <h2 class="text-4xl font-bold text-gray-900 mb-4">Features</h2>
+-     <p class="text-lg text-gray-600 mb-12">Powerful tools that scale.</p>
+-     <div class="grid md:grid-cols-3 gap-8">
+-       <div class="rounded-2xl border border-gray-200 p-6 shadow-sm">
++ <section class="py-band-narrative bg-paper">
++   <div class="max-w-content mx-auto px-4">
++     <h2 class="text-section font-display leading-display tracking-display font-bold text-ink mb-4">Features</h2>
++     <p class="text-lead text-ink-muted mb-12">Powerful tools that scale.</p>
++     <div class="grid gap-x-[1.75rem] gap-y-[2.5rem] grid-cols-1 md:grid-cols-12">
++       <div class="border border-rule p-6 md:col-span-5">
 ```
 
-pre-commit:
+Yapılanlar:
 
-```yaml
-repos:
-  - repo: https://github.com/mertsoylu/aislopfixer
-    rev: v0.6.0
-    hooks:
-      - id: aislopfixer
-```
+- **Token remap** — stok palet değerleri sistem rollerine (`bg-blue-600` → `bg-accent`, `text-gray-600` → `text-ink-muted`)
+- **Tip rolleri** — framework rampası display/section/title/lead/body/meta'ya; display boyutlar rampada hiç olmayan leading ve tracking'i kazanır
+- **Ritim** — tek bant değeri, bölümün *ne olduğuna* göre dört banda ayrılır (hero → `open`, özellikler → `narrative`, fiyat ve SSS → `dense`, alt bilgi → `close`)
+- **Simetri kırma** — simetrik ızgaralar 12 sütunlu asimetrik bölünmeye; her ızgara farklı bir desen alır, yoksa asimetri de tekdüzeleşir
+- **Hizalama** — ortalanmış başlık monokültürü arketipin doktrinine göre çözülür
+- **Tam genişlik kırılması** — sayfada bir medya elemanı, yalnızca sınıflarla container'ın dışına taşınır
+- **Bağlama** — `.aislopfixer/system.css` HTML `<head>` ya da CSS girişine bağlanır
 
-## Configuration
+Güvenlik: her dosyaya bir kez `.aislopfixer.bak`, uygulamadan önce tam diff, `u` ile geri alma, ve **idempotent** çalışma (ikinci geçiş sıfır düzenleme üretir). Dosyalar LF olarak okunup **kendi satır sonu ve BOM'uyla** geri yazılır.
 
-Optional `.aislopfixer.toml` at the project root — CLI flags always win:
+Ölçülen etki: `slop_saas` 88.6 → 23.9, `slop_react` 87.6 → 40.0. Saha tarafında on iki deponun on ikisinde patch `git apply` temiz, ikinci geçiş sıfır düzenleme, ve **hepsinde skor düşüyor**.
 
-```toml
-disable = ["design.emoji_ui", "buzzword.delve"]  # rule-id prefixes to turn off
-ignore = ["legacy/**", "third_party/**"]          # path globs to skip entirely
-fail_on = "risky"        # exit-code gate: broken|risky (impact) or info|warning|error|never
-min_confidence = 0.5     # headless reporting floor, 0..1
-```
+`className={cn(...)}` gibi ifade sınıfları **atlanır ve sayılır** — orası kod, sessizce düzenlenmez.
 
-`disable` and `ignore` apply to the TUI and headless mode alike.
+## Agent reçetesi
 
-## Scoring
+Sınıf yazımıyla çözülemeyen şeyler kalır: kanonik bölüm sırası, üç işi birden yapan tek blok şekli, slot doldurmak için yazılmış metin. `x` bunları bir coding agent'ın uygulayabileceği markdown brief'e çevirir — türetilen sistemin token isimleriyle ve ölçüme dayalı kabul kriteriyle birlikte.
 
-Every finding carries a confidence (0–1) from a per-rule table, falling back to category × severity. Weak signals **corroborate**: when several independent AI-authorship tells co-occur in one file (an elision marker + a stub + a debug log), every finding there gets boosted. The file score is an impact-weighted noisy-OR — findings accumulate within their impact class, and each class is capped, so a pile of buzzwords can never read like a shipped vulnerability. The project score is a self-weighted mean, so one sloppy file isn't diluted by fifty clean ones. Confidence gates bulk auto-fix (≥ 0.60) and is yours to threshold in CI.
+---
 
-## Supported files
-
-`.html .htm .jsx .tsx .js .ts .mjs .cjs .vue .svelte .astro .md .mdx .css` — skips `node_modules`, build output, hidden dirs, repo-meta docs (README/LICENSE/CLAUDE/AGENTS…), files > 2 MB, and minified bundles (`*.min.js` or single-giant-line files).
-
-## Architecture
+## Mimari
 
 ```
 src/aislopfixer/
-├── cli.py            # entrypoint: TUI by default, --check/--json/--sarif/--prompt/--fix headless
-├── headless.py       # CI mode: text/JSON/SARIF/fix-brief rendering, exit codes, batch auto-fix
-├── pipeline.py       # the one scan pipeline both front-ends share
-├── prompter.py       # findings → fix brief for an AI coding assistant
-├── config.py         # .aislopfixer.toml: disable rules, ignore globs, thresholds
-├── app.py            # Textual App, screen orchestration
-├── scanner.py        # dir walk → SourceFile (ext/ignore/size filters)
-├── fixer.py          # AUTO/PROMPT/MANUAL fixes, backups, diff preview
-├── store.py          # .aislopfixer/ project memory (allowlist, ledger, report)
-├── engine/
-│   ├── runner.py     # run rules → dedupe → collapse → containment → corroborate
-│   ├── scoring.py    # confidence + impact tables, impact-weighted file score
-│   ├── context.py    # prose regions + string/comment masking (the FP killer)
-│   └── rules/        # ai_leaks, placeholders, buzzwords, prose_tells, copy_slop,
-│                     #   duplicates, accessibility, codegen, design_slop,
-│                     #   landing_tells, markdown_tells, merge_conflicts,
-│                     #   secrets, security, imports   (15 modules)
-├── screens/          # splash → path → scan → results → summary
-└── widgets/          # animations, counters, logo, stats
+├── cli.py / app.py        # TUI giriş noktası ve ekran akışı
+├── scanner.py             # dosya yürüyüşü (uzantı, boyut, minified filtresi)
+├── store.py               # .aislopfixer/{state.json, report.md}
+├── screens/               # splash → path → scan → report → system → summary
+└── design/
+    ├── models.py          # Axis, Origin, Decl, Element, Observation, DesignReport
+    ├── parse/             # markup (toleranslı HTML/JSX/MDX tarayıcı), css,
+    │                      #   classes, components, styles, expr, theme, lexer
+    ├── metrics/           # vocabulary · rhythm · layout · repetition · palette ·
+    │                      #   content · tells · sections · states · contrast
+    ├── analyze.py         # metrikleri birleştirir → DesignReport
+    ├── scope.py           # kök + kapsam: hangi siteyi ölçtüğümüz (--pages)
+    ├── render.py          # yazılmış ağaç → tarayıcının aldığı ağaç
+    ├── system/            # archetypes · derive · color · emit · preview
+    ├── transform/         # classmap · plan · apply · wire · verify
+    └── brief.py           # rapor → agent reçetesi
 ```
 
-Rules self-register via `@file_rule` / `@cross_rule` decorators; most are declarative `Pattern` lists (regex + severity + fixability + string/comment masking flags + optional guard). Adding a detector is ~30 lines plus a test and a labeled bench case — `tests/test_bench.py` enforces 100% recall on the corpus and **zero** false positives on clean files.
+Boru hattı: **ayrıştır → ölç → sistem türet → planla → önizle → uygula → yeniden ölç.**
 
-## Development
+## Geliştirme
 
 ```bash
-pytest                              # full suite (pythonpath=src via pyproject)
-PYTHONPATH=src python -m bench.run  # calibration: recall + clean-FP metrics
-PYTHONPATH=src python scripts/shots.py  # regenerate the README screenshots
+pip install -e ".[dev]"
+aislopfixer ./bench/cases/slop_saas   # arayüzü aç
+python -m bench.run                    # kalibrasyon tablosu
+pytest                                 # 185 test
+python -m bench.field --no-fetch       # saha tablosu (önbellekteki klonlar)
+python -m bench.impact                 # tahmin edilen vs gerçekleşen düşüş
 ```
 
-Stack: Python ≥ 3.11, [Textual](https://textual.textualize.io/) ≥ 0.80. End users install via npm (above); the launcher manages the Python env.
+## Lisans
 
-## License
-
-[MIT](LICENSE) © mertsoylu
+MIT

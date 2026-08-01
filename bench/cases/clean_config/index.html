@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<!--
+  A bindery's site, and the corpus's argument for reading tailwind.config.js.
+
+  Spacing, widths and the grid here are all stock Tailwind — this is not a page
+  that arbitrary-valued its way to a score. Its one system is typographic, and
+  every step of it is spelled `text-lg`, `text-xl`, `text-display`. Read the
+  config and that is a ratio someone chose; ignore the config and it is the
+  default ramp. The tool must not punish the file it refused to open.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bell &amp; Quire — a bindery in Leeds</title>
+  <link rel="stylesheet" href="/build/site.css">
+</head>
+<body class="bg-paper text-ink font-sans">
+
+  <nav class="border-b border-rule">
+    <div class="max-w-6xl mx-auto px-6 py-5 flex justify-between items-baseline">
+      <span class="text-lg tracking-plate uppercase">Bell &amp; Quire</span>
+      <a href="#commission" class="text-sm text-ink-soft underline">Commission</a>
+    </div>
+  </nav>
+
+  <header class="pt-28 pb-16">
+    <div class="max-w-6xl mx-auto px-6 grid md:grid-cols-5 gap-12">
+      <h1 class="md:col-span-3 font-serif text-display">
+        Sewn on cords, the way a book that will be opened twice a week has to be.
+      </h1>
+      <p class="md:col-span-2 self-end text-lg text-ink-soft">
+        We rebind about ninety books a year and turn away rather more than that. Most of
+        what we take is somebody's working copy — a score, a ledger, a recipe folder that
+        has stopped closing.
+      </p>
+    </div>
+  </header>
+
+  <section class="pb-16">
+    <img src="/photos/sewing-frame.jpg" alt="A sewing frame with five raised cords, half sewn"
+         class="w-full h-96 object-cover">
+  </section>
+
+  <section class="py-12 border-y border-rule">
+    <div class="max-w-2xl mx-auto px-6">
+      <h2 class="font-serif text-2xl mb-6">What we actually do</h2>
+      <p class="text-base text-ink-soft mb-6">
+        Full leather, quarter leather, and a cloth binding we have been making the same
+        way since 2011. We do not do gilt edges, we do not do box sets, and we will
+        usually talk you out of marbled endpapers because they date faster than anything
+        else on the book.
+      </p>
+      <p class="text-base text-ink-soft">
+        Repairs are the bulk of it. A spine that has gone at the joint is four days'
+        work and costs less than most people expect; a text block that has been
+        guillotined by a previous binder is not repairable at all, and we will say so.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="max-w-6xl mx-auto px-6">
+      <h2 class="font-serif text-2xl mb-10">Three we finished in March</h2>
+      <div class="grid md:grid-cols-3 gap-8">
+        <article class="border border-rule rounded-panel p-6">
+          <h3 class="font-serif text-xl mb-3">A 1902 mill ledger</h3>
+          <p class="text-sm text-ink-soft">
+            Rebacked in goat, original boards kept. The owner's grandfather ruled every
+            column in it by hand and we were not about to trim that off.
+          </p>
+        </article>
+        <article class="md:col-span-2 border border-rule rounded-panel p-6">
+          <h3 class="font-serif text-xl mb-3">Fourteen orchestral parts</h3>
+          <p class="text-sm text-ink-soft">
+            Sewn flat so they lie open on a stand, which is the only thing a player
+            actually asks for. Cloth in five colours so the section can find its own
+            part in the dark of a pit — the sort of decision that never survives a
+            template, because it only makes sense for this one job.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-14 bg-madder text-paper">
+    <div class="max-w-4xl mx-auto px-6">
+      <p class="text-xl">
+        The bindery is above a joiner's on Sheepscar Street. If the door is open the
+        press is free.
+      </p>
+    </div>
+  </section>
+
+  <section id="commission" class="py-24">
+    <div class="max-w-2xl mx-auto px-6">
+      <h2 class="font-serif text-3xl mb-6">Commissioning</h2>
+      <p class="text-base text-ink-soft mb-8">
+        Bring the book. We will not quote from a photograph — half of what decides the
+        price is how the text block has been trimmed, and that does not photograph.
+      </p>
+      <a href="mailto:bench@bellandquire.co.uk"
+         class="text-lg underline decoration-madder">bench@bellandquire.co.uk</a>
+    </div>
+  </section>
+
+  <footer class="py-8 border-t border-rule">
+    <div class="max-w-6xl mx-auto px-6 text-xs text-ink-soft">
+      Bell &amp; Quire, 44 Sheepscar Street South, Leeds. Est. 2011.
+    </div>
+  </footer>
+
+</body>
+</html>
